@@ -1,0 +1,53 @@
+{% import "sections/_macros.html.j2" as m %}
+<section class="section" id="geo-score">
+  {{ m.sub_head("分析总结 · GEO 就绪度评分", "核心判断 + 五维就绪度评分（引用度 31.25% · 内容 25% · 技术 18.75% · Schema 12.5% · 爬虫 12.5%）。", report.label_zh or report.label, m.tag_class(report.geo_score)) }}
+
+  <article class="verdict" style="margin-bottom:24px">
+    <small>核心判断</small>
+    <p>{{ report.executive_summary.overall_assessment or report.description or "本报告基于官网实测数据生成，所有发现均引用真实观测证据；未能执行的检查在对应章节标注为「未测量」。" }}</p>
+  </article>
+
+  <div class="scoreboard" style="margin-bottom:24px">
+    <aside class="total">
+      <span class="score-label">官网 GEO 诊断评分</span>
+      <b>{{ report.geo_score }}<span class="score-max"> / 100</span></b>
+      <strong>{{ report.label_zh or report.label }}</strong>
+      <div class="total-gauge">
+        {% if report.chart_data.gauge %}<div id="chart-gauge" class="chart chart-gauge"></div>{% else %}{{ m.not_measured("综合评分", "至少一个已测维度") }}{% endif %}
+      </div>
+    </aside>
+    <div class="bars">
+      {% if report.chart_data.radar %}<div id="chart-radar" class="chart-radar"></div>{% else %}{{ m.not_measured("雷达图", "各维度得分") }}{% endif %}
+    </div>
+  </div>
+
+  {# 各维度得分理由（折叠面板）：仅在有任一 note 时渲染 #}
+  {% set notes_exist = report.components | selectattr("note") | list | length > 0 %}
+  {% if notes_exist %}
+  <details class="view-fold">
+    <summary class="view-fold-summary">
+      <span class="fold-icon">▶</span>
+      <span class="view-fold-title">各维度得分理由</span>
+      <span class="view-fold-hint">每个维度为什么是这个分数</span>
+    </summary>
+    <div class="view-fold-body">
+      <ul class="dim-note-list">
+        {% for c in report.components %}
+        <li class="dim-note-item">
+          <div class="dim-note-head">
+            <span class="dim-note-name">{{ c.name }}</span>
+            <span class="dim-note-weight">权重 {{ "%.2f"|format(c.weight * 100) }}%</span>
+            <span class="dim-note-score">{{ c.score }}<span class="dim-note-max"> / 100</span></span>
+          </div>
+          {% if c.note %}
+          <p class="dim-note-text">{{ c.note }}</p>
+          {% else %}
+          <p class="dim-note-text dim-note-empty">未测量或 agent 未提供评分理由</p>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </details>
+  {% endif %}
+</section>

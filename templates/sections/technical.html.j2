@@ -1,0 +1,64 @@
+{% import "sections/_macros.html.j2" as m %}
+<section class="section" id="technical">
+  {% set tech = report.technical %}
+  {% set fr = report.fetch.get("freshness") or {} %}
+  {# 综合技术分从 components 取（与雷达图/瀑布图同源），security_score 仅为安全头子项分数 #}
+  {% set tech_component = report.components | selectattr("key", "equalto", "technical") | first %}
+  {% set overall_score = tech_component.score if tech_component else none %}
+  {{ m.sub_head("技术基础与内容时效", "HTTPS、安全响应头、llms.txt 与内容新鲜度信号。安全头是信任信号；新鲜度影响 AI 对内容时效性的判断。",
+      (overall_score | string + "/100") if overall_score is not none else "未测量",
+      "good" if (overall_score or 0) >= 75 else "warn" if (overall_score or 0) >= 40 else "bad" if overall_score is not none else "none") }}
+
+  {% if tech.security_score is none or tech.security_score is undefined %}
+    {{ m.not_measured("技术基础", "python report.py collect <url>（technical）") }}
+  {% else %}
+  {# bigflag 按最差子项着色：HTTPS 缺失 > 安全头全缺 > 全部正常 #}
+  {% set worst_issue = "bad" if not tech.https else "bad" if (tech.headers_present or 0) == 0 else "warn" if (tech.headers_present or 0) < (tech.headers_total or 6) else "good" %}
+  <div class="bigflag {{ worst_issue }}">
+    <h3>{% if tech.https %}✅ HTTPS 已启用{% else %}❌ 未启用 HTTPS{% endif %} · {% if (tech.headers_present or 0) == 0 %}❌ 安全响应头 {{ tech.headers_present }}/{{ tech.headers_total }} 全缺{% elif (tech.headers_present or 0) < (tech.headers_total or 6) %}⚠️ 安全头 {{ tech.headers_present }}/{{ tech.headers_total }} 已配置{% else %}✅ 安全头 {{ tech.headers_present }}/{{ tech.headers_total }} 已配置{% endif %} · 综合 {{ overall_score if overall_score is not none else tech.security_score }}/100</h3>
+    {% if (tech.headers_present or 0) < (tech.headers_total or 6) %}<p style="margin:6px 0 0;font-size:12.5px;color:var(--ink-2)">安全头缺失项见下方矩阵，可在 Cloudflare Transform Rules 统一补齐。</p>{% endif %}
+  </div>
+
+  <div class="chart-grid">
+    <div class="chart-card">
+      <header><h3>安全响应头矩阵</h3><small>直接来自实测响应头</small></header>
+      <table class="data" style="margin:8px 0">
+        <thead><tr><th>响应头</th><th>状态</th><th>权重</th></tr></thead>
+        <tbody>
+          {% for h in tech.security_matrix %}
+          <tr>
+            <td style="font-family:var(--mono);font-size:11px">{{ h.header }}</td>
+            <td>{% if h.present %}<span class="dot green"></span>已配置{% else %}<span class="dot red"></span>缺失{% endif %}</td>
+            <td>{{ h.points }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="chart-card">
+      <header><h3>llms.txt 状态</h3><small>新兴规范 · 非计分信号</small></header>
+      <div class="pad">
+        <p style="margin:8px 0;font-size:13.5px">{% if tech.llms.llms_txt %}<span class="dot green"></span>{% else %}<span class="dot grey"></span>{% endif %}/llms.txt {{ "已发布" if tech.llms.llms_txt else "缺失" }}</p>
+        <p style="margin:8px 0;font-size:13.5px">{% if tech.llms.llms_full_txt %}<span class="dot green"></span>{% else %}<span class="dot grey"></span>{% endif %}/llms-full.txt {{ "已发布" if tech.llms.llms_full_txt else "缺失" }}</p>
+        <p style="font-size:12px;color:var(--muted);margin-top:12px">llms.txt 是面向 AI 的内容指南，类似 robots.txt。对开发者向站点有用；目前非引用杠杆。</p>
+      </div>
+    </div>
+    <div class="chart-card span2">
+      <header><h3>内容新鲜度信号</h3><small>AI 偏好近期更新的内容 · 90 天内为新鲜 · 365 天以上为陈旧</small></header>
+      <div class="pad">
+        {% if fr.age_days is not none %}
+        <p style="margin:6px 0;font-size:13.5px">
+          <span class="dot {{ 'green' if fr.age_days < 90 else 'amber' if fr.age_days < 365 else 'red' }}"></span>
+          最近更新：<b>{{ fr.best_date or "未知" }}</b>（距今 {{ fr.age_days }} 天 · {{ fr.tier_zh or fr.tier }}）
+        </p>
+        {% if fr.sampled_from %}<p style="font-size:12px;color:var(--muted);margin:4px 0">首页无机器可读日期，取最新鲜的内容页：<a href="{{ fr.sampled_from }}" target="_blank" rel="noopener">{{ fr.sampled_from }}</a></p>{% endif %}
+        <p style="font-size:12px;color:var(--muted);margin:8px 0 0">来源：{{ fr.source or "—" }}。为所有内容页补 &lt;time datetime&gt; 或 Article dateModified，帮助 AI 验证时效性。</p>
+        {% else %}
+        <p style="margin:6px 0;font-size:13.5px"><span class="dot grey"></span>未检测到机器可读日期（dateModified / &lt;time datetime&gt; / Last-Modified）。</p>
+        <p style="font-size:12px;color:var(--muted);margin:8px 0 0">AI 无法验证内容时效性，倾向引用有明确更新时间的页面。建议为内容页添加 Article datePublished / dateModified。</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</section>

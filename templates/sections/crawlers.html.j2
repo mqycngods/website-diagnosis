@@ -1,0 +1,74 @@
+{% import "sections/_macros.html.j2" as m %}
+<section class="section" id="crawler-access">
+  {% set bots = report.bots %}
+  {{ m.sub_head("AI 爬虫可达性", "以真实 UA 重放实测每个爬虫收到的响应（非 robots.txt 推断），并对照 robots.txt 声明策略。涵盖 crawler 可达性、robots.txt、crawlability。",
+      bots.verdict_zh or bots.verdict or "未测量",
+      "good" if bots.verdict in ("OPEN","HEALTHY_PUBLISHER") else "warn" if bots.verdict == "PARTIALLY_BLOCKED" else "bad" if bots.verdict else "none") }}
+
+  {% if not bots.probes %}
+    {{ m.not_measured("爬虫可达性", "python report.py collect <url>（bots）") }}
+  {% else %}
+  {% set n_blocked = bots.probes | selectattr("blocked") | list | length %}
+  {% set n_payment = bots.probes | selectattr("payment_required") | list | length %}
+  <div class="bigflag {{ 'good' if bots.verdict in ('OPEN','HEALTHY_PUBLISHER') else 'bad' }}">
+    <h3>整体态势：{{ bots.verdict_zh or bots.verdict }}{% if bots.overall_score is not none %} · {{ bots.overall_score }}/100{% endif %}</h3>
+    <p>
+      实测 {{ bots.probes | length }} 个爬虫，{{ n_blocked }} 个受阻。
+      {% if bots.wafs_detected %}WAF/CDN：{{ bots.wafs_detected | map(attribute="product") | join("、") }}。{% endif %}
+      {% if bots.verdict == "HEALTHY_PUBLISHER" %}拦训练、放检索属健康出版方姿态，不计为问题。{% endif %}
+    </p>
+  </div>
+
+  {% if n_blocked == 0 and n_payment == 0 %}
+  {# 全绿时折叠明细：汇总卡替代 12 行全同的表格，点击可展开 #}
+  <details class="code-fold" style="border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);overflow:hidden">
+    <summary style="cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:10px;padding:14px 20px;background:var(--warm);font-size:13px;color:var(--muted)">
+      <span class="fold-icon" style="display:inline-block;transition:transform .15s;font-size:10px">▶</span>
+      <span class="fold-label"><b style="color:var(--ink)">{{ bots.probes | length }}/{{ bots.probes | length }} 全部可达</b> · 逐爬虫实测明细（点击展开）</span>
+    </summary>
+    <table class="data">
+      <thead><tr><th>爬虫</th><th>类别</th><th>HTTP</th><th>相似度</th><th>实测状态</th><th>robots 声明</th></tr></thead>
+      <tbody>
+        {% for p in bots.probes %}
+        <tr>
+          <td><b>{{ p.bot }}</b><br><small style="color:var(--faint)">{{ p.operator }}</small></td>
+          <td>{{ p.bot_class_zh or p.class }}</td>
+          <td>{{ p.status if p.status is not none else "—" }}</td>
+          <td>{{ p.similarity if p.similarity is not none else "—" }}</td>
+          <td>
+            {% if p.payment_required %}<span class="status info">需付费</span>
+            {% elif p.blocked %}<span class="status bad">被拦</span>
+            {% else %}<span class="status good">可达</span>{% endif %}
+          </td>
+          <td><small style="color:var(--muted)">{{ report.robots.ai_crawler_status.get(p.bot, "—") }}</small></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% else %}
+  <div class="card">
+    <header><h3>逐爬虫实测明细</h3><span class="status info">实测 × robots 声明对照</span></header>
+    <table class="data">
+      <thead><tr><th>爬虫</th><th>类别</th><th>HTTP</th><th>相似度</th><th>实测状态</th><th>robots 声明</th></tr></thead>
+      <tbody>
+        {% for p in bots.probes %}
+        <tr>
+          <td><b>{{ p.bot }}</b><br><small style="color:var(--faint)">{{ p.operator }}</small></td>
+          <td>{{ p.bot_class_zh or p.class }}</td>
+          <td>{{ p.status if p.status is not none else "—" }}</td>
+          <td>{{ p.similarity if p.similarity is not none else "—" }}</td>
+          <td>
+            {% if p.payment_required %}<span class="status info">需付费</span>
+            {% elif p.blocked %}<span class="status bad">被拦</span>
+            {% else %}<span class="status good">可达</span>{% endif %}
+          </td>
+          <td><small style="color:var(--muted)">{{ report.robots.ai_crawler_status.get(p.bot, "—") }}</small></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  {% endif %}
+</section>

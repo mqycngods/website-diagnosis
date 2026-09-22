@@ -1,0 +1,314 @@
+{% import "sections/_macros.html.j2" as m %}
+<section class="section" id="schema">
+  {% set sch = report.schema %}
+  {% set sampled = sch.sampled or {} %}
+  {% set n_missing = sch.inventory | selectattr("status", "equalto", "Missing") | list | length %}
+  {% set n_present = sch.inventory | selectattr("status", "equalto", "Present") | list | length %}
+  {% set n_broken = sch.inventory | selectattr("status", "equalto", "Broken") | list | length %}
+  {% set n_notsampled = sch.inventory | selectattr("status", "equalto", "NotSampled") | list | length %}
+  {{ m.sub_head("品牌识别与 Schema", "JSON-LD 清单、GEO 关键类型覆盖与 sameAs 实体链接。涵盖 Organization / WebSite / Product / WebPage / Breadcrumb / 品牌实体一致性。",
+      "未测量" if not sch else (sch.types_found | length | string + " 类型") if sch.types_found else "已测量 · 0 类型",
+      "none" if not sch else "good" if sch.has_organization else "warn" if sch.types_found else "bad") }}
+
+  {% if not sch %}
+    {{ m.not_measured("Schema", "python report.py collect <url>（schema）") }}
+  {% else %}
+  {% if not sch.types_found %}
+  <div class="verdict" style="margin-bottom:14px">
+    <small>已测量 · 未检测到 JSON-LD</small>
+    <p style="margin-top:10px">首页服务端 HTML 中没有检测到任何 JSON-LD 结构化数据块——这是一个已确认的发现，不是未执行的检查。
+    若站点使用 Shopify / WordPress（Yoast、RankMath）等 CMS，Schema 可能由 JavaScript 在浏览器端注入，本次静态抓取无法看到；建议用浏览器开发者工具核对渲染后的 DOM 再下结论。</p>
+  </div>
+  {% endif %}
+  <div class="chart-grid">
+    <div class="chart-card">
+      <header><h3>覆盖概览 <span class="hint-icon" data-hint="统计 GEO 关键 Schema 类型（Organization / WebSite / LocalBusiness / Article / Product / FAQPage / BreadcrumbList / Person / Service）在已抓取页面中的覆盖情况。已具备 = 检测到该类型 JSON-LD；缺失 = 已抓宿主页但未检测到；未采样 = 宿主页未被抓取，无法判定。">!</span></h3></header>
+      <div class="pad" style="text-align:center">
+        <p style="margin:0 0 4px;font-size:12px;color:var(--muted)">{{ sch.total_blocks }} 个 JSON-LD 块 · {{ sch.types_found | length }} 种类型</p>
+        <p style="margin:0 0 12px;font-size:12px;color:var(--muted)">采样：首页{% if sampled.article_pages %} + {{ sampled.article_pages }} 文章页{% endif %}{% if sampled.product_pages %} + {{ sampled.product_pages }} 产品页{% else %}（未含产品页）{% endif %}</p>
+        <div style="min-height:52px;display:table;width:100%">
+          <div style="display:table-cell;vertical-align:middle;text-align:center">
+            <b style="font:400 40px/1 var(--serif);color:var(--green)">{{ n_present }}</b>
+            <span style="color:var(--muted);font-size:13px"> 已具备 / </span>
+            <b style="font:400 40px/1 var(--serif);color:var(--red)">{{ n_missing }}</b>
+            <span style="color:var(--muted);font-size:13px"> 缺失</span>{% if n_broken %}<span style="color:var(--muted);font-size:13px"> / </span><b style="font:400 40px/1 var(--serif);color:#c62828">{{ n_broken }}</b>
+            <span style="color:var(--muted);font-size:13px"> 损坏</span>{% endif %}{% if n_notsampled %}<span style="color:var(--muted);font-size:13px"> / </span><b style="font:400 40px/1 var(--serif);color:var(--faint)">{{ n_notsampled }}</b>
+            <span style="color:var(--muted);font-size:13px"> 未采样</span>{% endif %}
+          </div>
+        </div>
+        {% if n_broken %}
+        <div style="margin-top:10px;padding:8px 12px;background:rgba(198,40,40,.06);border-left:3px solid #c62828;border-radius:4px;text-align:left">
+          <p style="margin:0;font-size:12px;color:var(--ink)">⚠ <b>{{ n_broken }} 块存在但损坏</b>，无法解析——详见下方「覆盖情况」。</p>
+        </div>
+        {% endif %}
+        {% if sch.autofixed_count %}
+        <div style="margin-top:8px;padding:8px 12px;background:rgba(237,108,2,.06);border-left:3px solid var(--amber,#ed6c02);border-radius:4px;text-align:left">
+          <p style="margin:0;font-size:12px;color:var(--ink)">⚠ <b>{{ sch.autofixed_count }} 块含语法错误</b>（脚本已自动修复，线上源文件仍是坏的）——详见下方「覆盖情况」。</p>
+        </div>
+        {% endif %}
+        {% if sch.field_issues %}
+        <div style="margin-top:8px;padding:8px 12px;background:rgba(2,119,189,.05);border-left:3px solid #0277bd;border-radius:4px;text-align:left">
+          <p style="margin:0;font-size:12px;color:var(--ink)">ⓘ <b>{{ sch.field_issues | length }} 处字段级质量问题</b>——详见下方「覆盖情况」。</p>
+        </div>
+        {% endif %}
+        {% if sch.is_ecommerce %}<p style="font-size:12px;color:var(--muted);margin:10px 0 0">检测到电商站特征 — Product Schema 是 AI 购物推荐的核心实体，权重已按 High 计。</p>{% endif %}
+      </div>
+    </div>
+    <div class="chart-card">
+      <header><h3>sameAs 实体链接 <span class="hint-icon" data-hint="从所有 JSON-LD 块中提取 sameAs 属性的 URL 数量。sameAs 是 Organization / Person schema 中声明「这个实体也在这些平台存在」的链接（如 Wikipedia、LinkedIn、Crunchbase），是 GEO 中最有影响力的单一属性——帮助 AI 引擎把网站与知识图谱中的实体绑定，消除品牌歧义。">!</span></h3></header>
+      <div class="pad" style="text-align:center">
+        <p style="margin:0 0 4px;font-size:12px;color:var(--muted)">GEO 最有影响力的单一属性</p>
+        <p style="margin:0 0 12px;font-size:12px;color:var(--muted)">链接站外权威资料，帮助 AI 确认品牌实体</p>
+        <div style="min-height:52px;display:table;width:100%">
+          <div style="display:table-cell;vertical-align:middle;text-align:center">
+            <b style="font:400 40px/1 var(--serif);color:{{ 'var(--green)' if sch.sameas_count else 'var(--red)' }}">{{ sch.sameas_count }}</b>
+            <span style="color:var(--muted);font-size:13px"> 条 sameAs 链接</span>
+          </div>
+        </div>
+        {% if sch.sameas_links %}
+        <ul style="margin:12px 0 0;padding-left:16px;font-size:11.5px;color:var(--muted);font-family:var(--mono);text-align:left">
+          {% for l in sch.sameas_links[:6] %}<li style="margin:3px 0;overflow-wrap:anywhere">{{ l }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+    </div>
+    <details class="view-fold span2">
+      <summary class="view-fold-summary">
+        <span class="fold-icon">▶</span>
+        <span class="view-fold-title">GEO 关键 Schema 覆盖情况</span>
+        <span class="view-fold-hint">按页面分组：已实测页面缺哪些标记 · 未采样页面类型标「待补采」</span>
+      </summary>
+      <div class="view-fold-body">
+
+      {% set page_groups = [
+        {"name": "首页", "url": "/", "sampled": true, "types": ["Organization", "WebSite", "BreadcrumbList"]},
+        {"name": "关于页", "url": "/about-us", "sampled": true, "types": ["Organization", "LocalBusiness", "Person"]},
+        {"name": "联系页", "url": "/contact-us", "sampled": true, "types": ["LocalBusiness", "Organization"]},
+        {"name": "产品详情页", "url": "/products/...", "sampled": (sampled.product_pages or 0) > 0, "types": ["Product", "Service", "BreadcrumbList"], "sample_hint": "/products 列表下任一详情页"},
+        {"name": "文章页", "url": "/news/...", "sampled": (sampled.article_pages or 0) > 0, "types": ["Article（含 NewsArticle/BlogPosting）", "Person", "BreadcrumbList"], "sample_hint": "/news 列表下任一文章"}
+      ] %}
+
+      {% set inv_map = {} %}
+      {% for i in sch.inventory %}
+        {% set _ = inv_map.update({i.schema_type: i}) %}
+      {% endfor %}
+
+      {# ===== 详情 Tabs：语法错误 / 字段级质量 / 页面 Schema 缺失 ===== #}
+      {% set tab_id = "schemaTabs" %}
+      <div class="schema-tabs" style="margin-top:8px;border:1px solid var(--line);border-radius:8px;overflow:hidden">
+        <div class="schema-tabs-nav" style="display:flex;border-bottom:1px solid var(--line);background:rgba(0,0,0,.02)">
+          {% if sch.autofixed_count %}
+          <button type="button" class="schema-tab-btn" data-tab="syntax" style="flex:1;padding:10px 12px;background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:500">
+            ⚠ 语法错误 <span style="margin-left:4px;padding:1px 6px;background:rgba(237,108,2,.12);color:#ed6c02;border-radius:8px;font-size:11px">{{ sch.autofixed_count }}</span>
+          </button>
+          {% endif %}
+          {% if sch.field_issues %}
+          <button type="button" class="schema-tab-btn" data-tab="field" style="flex:1;padding:10px 12px;background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:500">
+            ⓘ 字段级质量 <span style="margin-left:4px;padding:1px 6px;background:rgba(2,119,189,.12);color:#0277bd;border-radius:8px;font-size:11px">{{ sch.field_issues | length }}</span>
+          </button>
+          {% endif %}
+          <button type="button" class="schema-tab-btn" data-tab="pages" style="flex:1;padding:10px 12px;background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:500">
+            📄 页面 Schema 缺失 <span style="margin-left:4px;padding:1px 6px;background:rgba(198,40,40,.12);color:#c62828;border-radius:8px;font-size:11px">{{ n_missing }}</span>
+          </button>
+        </div>
+
+        {# ===== Tab 1: 语法错误（autofixed）===== #}
+        {% if sch.autofixed_count %}
+        <div class="schema-tab-pane" data-pane="syntax" style="display:none;padding:14px 16px">
+          <p style="margin:0 0 10px;font-size:12px;color:var(--muted)">脚本已自动修复用于分析；<strong>线上源文件仍是坏的</strong>，Google / AI 引擎看到的是原始版本，可能解析失败。需修改对应页面/CMS模板。</p>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            {% for t, items in sch.autofixed.items() %}
+              {% for it in items %}
+              <div style="padding:10px 12px;background:rgba(237,108,2,.04);border-radius:6px;font-size:12px">
+                <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+                  <span style="color:#ed6c02;font-weight:600">⚠</span>
+                  <b style="color:var(--ink)">{{ t }}</b>
+                  <span style="color:var(--muted)">·</span>
+                  <span style="color:var(--ink)">{% if it.kind == 'jsonld_unescaped_newline' %}字符串内含未转义换行符{% elif it.kind == 'jsonld_html_entities' %}JSON-LD 整体被 HTML 实体编码{% else %}{{ it.kind }}{% endif %}</span>
+                </div>
+                {% if it.page_url %}
+                <div style="margin-top:4px;font-family:var(--mono);font-size:11px;color:var(--muted);overflow-wrap:anywhere">
+                  页面：<a href="{{ it.page_url }}" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;text-underline-offset:2px"><code>{{ it.page_url }}</code> ↗</a>
+                </div>
+                {% endif %}
+                {% if it.raw_preview %}
+                <details style="margin-top:6px">
+                  <summary style="font-size:11px;color:var(--faint);cursor:pointer">查看原始片段</summary>
+                  <pre style="margin:4px 0 0;padding:6px 8px;background:rgba(0,0,0,.03);border-radius:3px;font-size:10.5px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;color:var(--muted)">{{ it.raw_preview }}</pre>
+                </details>
+                {% endif %}
+              </div>
+              {% endfor %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        {# ===== Tab 2: 字段级质量问题 ===== #}
+        {% if sch.field_issues %}
+        <div class="schema-tab-pane" data-pane="field" style="display:none;padding:14px 16px">
+          <p style="margin:0 0 10px;font-size:12px;color:var(--muted)">不影响 JSON 解析，但影响 AI 引擎对内容的提取质量与信任度。</p>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            {% for fi in sch.field_issues %}
+            <div style="padding:10px 12px;background:rgba(2,119,189,.04);border-radius:6px;font-size:12px">
+              <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+                <span style="color:#0277bd;font-weight:600">ⓘ</span>
+                <b style="color:var(--ink)">{{ fi.schema_type }}{% if fi.field %}.{{ fi.field }}{% endif %}</b>
+                <span style="color:var(--muted)">·</span>
+                <span style="color:var(--ink)">{{ fi.msg }}</span>
+              </div>
+              {% if fi.page_url %}
+              <div style="margin-top:4px;font-family:var(--mono);font-size:11px;color:var(--muted);overflow-wrap:anywhere">
+                页面：<a href="{{ fi.page_url }}" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;text-underline-offset:2px"><code>{{ fi.page_url }}</code> ↗</a>
+              </div>
+              {% endif %}
+              {% if fi.sample %}
+              <details style="margin-top:6px">
+                <summary style="font-size:11px;color:var(--faint);cursor:pointer">查看字段值片段</summary>
+                <pre style="margin:4px 0 0;padding:6px 8px;background:rgba(0,0,0,.03);border-radius:3px;font-size:10.5px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;color:var(--muted)">{{ fi.sample }}</pre>
+              </details>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        {# ===== Tab 3: 页面 Schema 缺失（原 page_groups 块）===== #}
+        <div class="schema-tab-pane" data-pane="pages" style="display:none;padding:14px 16px">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            {% for pg in page_groups %}
+            <div style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:{{ 'var(--paper)' if pg.sampled else 'transparent' }};opacity:{{ '1' if pg.sampled else '0.75' }}">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                <div>
+                  <b style="font-size:14px">{{ pg.name }}</b>
+                  <code style="font:11px var(--mono);color:var(--muted);margin-left:8px">{{ pg.url }}</code>
+                </div>
+                {% if pg.sampled %}
+                  <span style="font-size:11px;color:var(--green);font-weight:500">✓ 已实测</span>
+                {% else %}
+                  <span style="font-size:11px;color:var(--faint)">ⓘ 本次未采样</span>
+                {% endif %}
+              </div>
+
+              {% if pg.sampled %}
+                {% set missing_here = [] %}
+                {% for t in pg.types %}
+                  {% if t in inv_map and inv_map[t].status == "Missing" %}
+                    {% set _ = missing_here.append(inv_map[t]) %}
+                  {% endif %}
+                {% endfor %}
+                {% set present_here = [] %}
+                {% for t in pg.types %}
+                  {% if t in inv_map and inv_map[t].status == "Present" %}
+                    {% set _ = present_here.append(inv_map[t]) %}
+                  {% endif %}
+                {% endfor %}
+                {% set broken_here = [] %}
+                {% for t in pg.types %}
+                  {% if t in inv_map and inv_map[t].status == "Broken" %}
+                    {% set _ = broken_here.append(inv_map[t]) %}
+                  {% endif %}
+                {% endfor %}
+
+                {% if present_here %}
+                <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">
+                  {% for i in present_here %}
+                  <span style="font-size:11.5px;padding:3px 9px;border-radius:4px;background:rgba(46,125,50,.08);color:var(--green);border:1px solid rgba(46,125,50,.2)">✓ {{ i.schema_type }}</span>
+                  {% endfor %}
+                </div>
+                {% endif %}
+                {% if broken_here %}
+                <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+                  {% for i in broken_here %}
+                  <div style="font-size:12px;padding:8px 10px;background:rgba(198,40,40,.06);border-radius:3px">
+                    <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+                      <span style="color:#c62828">⚠</span>
+                      <span style="color:var(--ink)"><b>{{ i.schema_type }}</b> 存在但损坏</span>
+                      <span style="color:var(--muted);font-size:11px">· 影响 Critical · 优先级高于「缺失」</span>
+                    </div>
+                    {% if i.error %}
+                    <div style="margin-top:4px;font-family:var(--mono);font-size:11px;color:var(--muted);overflow-wrap:anywhere">错误：{{ i.error[:120] }}</div>
+                    {% endif %}
+                  </div>
+                  {% endfor %}
+                </div>
+                {% endif %}
+                {% if missing_here %}
+                <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+                  {% for i in missing_here %}
+                  <div style="font-size:12px;display:flex;align-items:baseline;gap:8px">
+                    <span style="color:var(--red)">✗</span>
+                    <span style="color:var(--ink)">缺 <b>{{ i.schema_type }}</b></span>
+                    <span style="color:var(--muted);font-size:11px">· 影响 {{ i.impact }}</span>
+                  </div>
+                  {% endfor %}
+                </div>
+                {% endif %}
+                {% if not present_here and not missing_here %}
+                <p style="margin:8px 0 0;font-size:12px;color:var(--muted)">本页未检测到相关 Schema 标记。</p>
+                {% endif %}
+              {% else %}
+                <p style="margin:8px 0 0;font-size:12px;color:var(--muted)">本次未采到该类页面，以下 Schema 状态<strong>未知</strong>（既非缺失也非已具备）：</p>
+                <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">
+                  {% for t in pg.types %}
+                  <span style="font-size:11.5px;padding:3px 9px;border-radius:4px;background:rgba(0,0,0,.04);color:var(--muted);border:1px dashed var(--line)">? {{ t }}</span>
+                  {% endfor %}
+                </div>
+                <p style="margin:8px 0 0;font-size:11.5px;color:var(--faint)">→ 建议补采 <code style="font:11px var(--mono)">{{ pg.sample_hint }}</code> 以确认状态</p>
+              {% endif %}
+            </div>
+            {% endfor %}
+
+            {% if "FAQPage" in inv_map and inv_map["FAQPage"].status == "Missing" %}
+            <div style="border:1px dashed var(--line);border-radius:8px;padding:12px 14px;background:rgba(0,0,0,.02)">
+              <div style="display:flex;align-items:baseline;gap:8px">
+                <b style="font-size:13px">FAQPage</b>
+                <span style="font-size:11px;color:var(--muted)">· 影响 Medium</span>
+              </div>
+              <p style="margin:6px 0 0;font-size:12px;color:var(--muted)">全站未发布 FAQ 页（见「功能页发现」章节），无从标记。建议先建 <code style="font:11px var(--mono)">/faq</code> 页再补此 Schema。</p>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <script>
+      (function(){
+        var root = document.currentScript.previousElementSibling;
+        if (!root || !root.classList.contains('schema-tabs')) {
+          root = document.querySelector('.schema-tabs');
+        }
+        if (!root) return;
+        var btns = root.querySelectorAll('.schema-tab-btn');
+        var panes = root.querySelectorAll('.schema-tab-pane');
+        if (!btns.length) return;
+        function activate(name){
+          btns.forEach(function(b){
+            var active = b.dataset.tab === name;
+            b.style.borderBottomColor = active ? 'var(--ink)' : 'transparent';
+            b.style.color = active ? 'var(--ink)' : 'var(--muted)';
+            b.style.fontWeight = active ? '600' : '500';
+          });
+          panes.forEach(function(p){
+            p.style.display = p.dataset.pane === name ? '' : 'none';
+          });
+        }
+        btns.forEach(function(b){
+          b.addEventListener('click', function(){ activate(b.dataset.tab); });
+        });
+        var first = btns[btns.length - 1].dataset.tab;  // 默认显示最后一个（页面 Schema 缺失）
+        if (root.querySelector('[data-tab="syntax"]')) first = 'syntax';
+        else if (root.querySelector('[data-tab="field"]')) first = 'field';
+        activate(first);
+      })();
+      </script>
+
+      <p style="margin:12px 0 0;padding:10px 12px;background:rgba(46,125,50,.04);font-size:12px;color:var(--muted)">
+        <b style="color:var(--ink)">阅读说明：</b>「语法错误」与「字段级质量」是 JSON-LD 内容级问题，修模板即可；「页面 Schema 缺失」是按页面分组的类型覆盖情况，用于规划补全哪些 Schema 类型。
+      </p>
+      </div>
+    </details>
+  </div>
+  {% endif %}
+</section>

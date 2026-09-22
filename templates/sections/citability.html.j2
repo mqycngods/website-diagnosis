@@ -1,0 +1,47 @@
+{% import "sections/_macros.html.j2" as m %}
+<section class="section" id="ai-citability">
+  {% set cit = report.citability %}
+  {% set n_blocks = cit.total_blocks_analyzed or (cit.all_blocks | length) %}
+  {{ m.sub_head("内容质量与引用度", "内容被 AI 系统直接引用、摘取的能力。确定性逐段评分，权重 25%。涵盖 citability / answerability / 内容质量 / 内容结构。",
+      (cit.average_citability_score | round | int | string + "/100") if cit.total_blocks_analyzed else "未测量",
+      m.tag_class(cit.average_citability_score | round | int) if cit.total_blocks_analyzed else "none") }}
+
+  {% if not cit.total_blocks_analyzed %}
+    {{ m.not_measured("AI 可引用性", "python report.py collect <url>（citability）") }}
+  {% else %}
+  {# 采样范围声明：与 06 章节的「已实测/未采样」保持同样的诚实度 #}
+  <p style="margin:-10px 0 18px;font-size:12px;color:var(--muted)">
+    ⓘ 本次仅采样首页 {{ n_blocks }} 个正文块；About/News/产品页未纳入可引用性评分，均分反映的是首页水平。
+  </p>
+  <div class="chart-grid">
+    <div class="chart-card span2">
+      <header><h3>五维度均值</h3><small>最弱维度即改写方向（答案块30·自足25·结构20·统计15·独特10）</small></header>
+      <div class="chart-body"><div id="chart-dimension-bars" class="chart short"></div></div>
+    </div>
+  </div>
+
+  {% if cit.all_blocks %}
+  {# 单表按分数排序，标注可引用阈值线 #}
+  {% set sorted_blocks = cit.all_blocks | sort(attribute="total_score", reverse=true) %}
+  <div class="card">
+    <header><h3>全部段落可引用性评分（按分数排序）</h3><span class="status info">{{ n_blocks }} 段 · ≥50 分为可引用候选</span></header>
+    <table class="data" style="table-layout:fixed">
+      <colgroup><col style="width:34px"><col style="width:20%"><col><col style="width:46px"><col style="width:46px"><col style="width:44px"><col style="width:72px"></colgroup>
+      <thead><tr><th>#</th><th>章节</th><th>预览</th><th>词数</th><th>分数</th><th>等级</th><th>优化方向</th></tr></thead>
+      <tbody>
+        {% for b in sorted_blocks %}
+        <tr{% if loop.index > 1 and sorted_blocks[loop.index - 2].total_score >= 50 and b.total_score < 50 %} style="border-top:2px dashed var(--line-strong)"{% endif %}>
+            <td>{{ loop.index }}</td><td><span class="ellipsis" title="{{ b.heading }}">{{ b.heading }}</span></td><td><span class="ellipsis" title="{{ b.content or b.preview }}">{{ b.preview }}</span></td>
+            <td>{{ b.word_count }}</td><td><b>{{ b.total_score }}</b></td>
+            <td><span class="status {{ 'good' if b.grade in ('A','B') else 'warn' if b.grade == 'C' else 'bad' }}">{{ b.grade }}</span></td>
+            <td style="font-size:12px;color:var(--ink2);line-height:1.5">{% if b.agent_hint %}<a class="hint-link" data-hint="{{ b.agent_hint | e }}">示例</a>{% else %}<span style="color:var(--muted)">—</span>{% endif %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="pad" style="border-top:1px solid var(--line-soft);font-size:12px;color:var(--muted)">
+      虚线以上为可引用候选（≥50 分），以下为改写目标。「优化方向」列的「示例」链接为 agent 针对该段原文写的具体改写建议，hover 查看全文；各维度含义见上方柱状图 hover。
+    </div>
+  </div>
+  {% endif %}
+  {% endif %}
+</section>

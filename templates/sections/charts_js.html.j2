@@ -1,0 +1,82 @@
+<script>
+(function () {
+  if (typeof echarts === "undefined") return;
+  var D = JSON.parse(document.getElementById("chart-data").textContent || "{}");
+  var C = D.colors || {};
+  var charts = [];
+  function init(id, option) {
+    var el = document.getElementById(id);
+    if (!el || !option) return;
+    var ch = echarts.init(el, null, { renderer: "svg" });
+    ch.setOption(option); charts.push(ch);
+  }
+  var AXL = { color: C.muted, fontSize: 11 };
+  var SL = { lineStyle: { color: C.warm2 } };
+  var TT = { trigger: "item", backgroundColor: "#fffdf8", borderColor: C.line, textStyle: { color: C.ink, fontSize: 12 } };
+  var TTA = { trigger: "axis", backgroundColor: "#fffdf8", borderColor: C.line, textStyle: { color: C.ink, fontSize: 12 } };
+
+  // 仪表盘（嵌入综合评分深棕面板，配色调亮；隐藏 detail 数字避免与上方大数字重复）
+  if (D.gauge) init("chart-gauge", { series: [{
+    type: "gauge", startAngle: 210, endAngle: -30, min: 0, max: 100, radius: "98%", center: ["50%", "55%"],
+    axisLine: { lineStyle: { width: 12, color: [[0.4, "#e2603f"], [0.6, "#e2a23f"], [0.75, "#8fae93"], [1, "#6fae7d"] ] } },
+    pointer: { length: "55%", width: 4, itemStyle: { color: "#e4a080" } },
+    anchor: { show: true, size: 8, itemStyle: { color: "#e4a080" } },
+    axisTick: { distance: -12, length: 4, lineStyle: { color: "#2a211d", width: 1 } },
+    splitLine: { distance: -12, length: 12, lineStyle: { color: "#2a211d", width: 2 } },
+    axisLabel: { distance: 18, color: "#a9a096", fontSize: 9 },
+    title: { show: false },
+    detail: { show: false },
+    data: [{ value: D.gauge.score, name: D.gauge.label }]
+  }]});
+
+  // 雷达
+  if (D.radar) init("chart-radar", {
+    tooltip: {
+      trigger: "item",
+      backgroundColor: "#fffdf8", borderColor: C.line, textStyle: { color: C.ink, fontSize: 12 },
+      confine: true,
+      formatter: function () {
+        // hover 任意位置都显示所有维度分数（不含 note，note 由下方折叠面板承担）
+        var dims = D.radar.labels || [], vals = D.radar.values || [];
+        var html = "";
+        for (var i = 0; i < dims.length; i++) {
+          html += "<div style='margin:2px 0'><b>" + dims[i] + "</b>  " + vals[i] + " / 100</div>";
+        }
+        return html;
+      }
+    },
+    radar: { indicator: D.radar.labels.map(function (n) { return { name: n, max: 100 }; }),
+      radius: "78%", shape: "polygon", axisName: { color: C.ink2, fontSize: 11 },
+      splitArea: { areaStyle: { color: ["#faf7f0", "#f4efe5"] } },
+      axisLine: { lineStyle: { color: C.line } }, splitLine: { lineStyle: { color: C.warm2 } } },
+    series: [{ type: "radar", data: [{ value: D.radar.values, name: "得分",
+      areaStyle: { color: "rgba(201,85,44,0.18)" }, lineStyle: { color: C.orange, width: 2 },
+      itemStyle: { color: C.orange }, symbolSize: 6 }] }]
+  });
+
+  // 五维度均值
+  if (D.dimension_bars) { var db = D.dimension_bars; init("chart-dimension-bars", {
+    tooltip: { trigger: "axis", backgroundColor: "#fffdf8", borderColor: C.line, textStyle: { color: C.ink, fontSize: 12 },
+      confine: true, extraCssText: "max-width:340px;white-space:normal;line-height:1.6;",
+      formatter: function (ps) {
+        var i = ps[0].dataIndex;
+        var h = "<div style='font-weight:600;margin-bottom:4px'>" + db.labels[i] +
+                " <span style='color:#7d7466;font-weight:400'>均值 " + db.values[i] + " / 满分 " + db.maxima[i] + "</span></div>";
+        if (db.descs && db.descs[i])   h += "<div style='margin-bottom:4px'><b>含义</b>：" + db.descs[i] + "</div>";
+        if (db.examples && db.examples[i]) h += "<div style='margin-bottom:4px'><b>满分示例</b>：" + db.examples[i] + "</div>";
+        if (db.hints && db.hints[i])   h += "<div style='color:#c9552c'><b>改写方向</b>：" + db.hints[i] + "</div>";
+        return h;
+      } },
+    grid: { left: 10, right: 60, top: 18, bottom: 8, containLabel: true },
+    xAxis: { type: "category", data: db.labels, axisLabel: { color: C.muted, fontSize: 11, interval: 0 }, axisLine: { lineStyle: { color: C.line } }, axisTick: { alignWithLabel: true } },
+    yAxis: { type: "value", axisLabel: AXL, splitLine: SL },
+    series: [
+      { type: "bar", data: db.maxima, barWidth: "52%", barGap: "-100%", silent: true, itemStyle: { color: C.warm2, borderRadius: [3, 3, 0, 0] }, tooltip: { show: false }, z: 1 },
+      { type: "bar", data: db.values, barWidth: "52%", z: 2, itemStyle: { color: C.orange, borderRadius: [3, 3, 0, 0] }, label: { show: true, position: "top", fontSize: 11, color: C.ink2 } }
+    ] }); }
+
+  var rt;
+  window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { charts.forEach(function (c) { c.resize(); }); }, 120); });
+  window.addEventListener("beforeprint", function () { charts.forEach(function (c) { c.resize(); }); });
+})();
+</script>

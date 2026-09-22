@@ -1,0 +1,42 @@
+{% macro section_head(no, title, subtitle, tag_text, tag_class) %}
+<div class="section-head">
+  <span class="section-no">{{ no }}</span>
+  <div><h2>{{ title }}</h2><p>{{ subtitle }}</p></div>
+  {% if tag_text %}<span class="section-tag status {{ tag_class }}">{{ tag_text }}</span>{% endif %}
+</div>
+{% endmacro %}
+
+{# 子章节头：用于 Group 内的二级 section，视觉权重低于 section_head #}
+{% macro sub_head(title, subtitle, tag_text, tag_class) %}
+<div class="sub-head">
+  <div class="sub-head-title-row"><h3>{{ title }}</h3>{% if subtitle %}<span class="hint-icon" data-hint="{{ subtitle | e }}">!</span>{% endif %}</div>
+  {% if tag_text %}<span class="section-tag status {{ tag_class }}">{{ tag_text }}</span>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro bar_color(score) -%}
+  {%- if score >= 75 -%}green{%- elif score >= 60 -%}green{%- elif score >= 40 -%}amber{%- else -%}red{%- endif -%}
+{% endmacro %}
+
+{% macro tag_class(score) -%}
+  {%- if score >= 60 -%}good{%- elif score >= 40 -%}warn{%- else -%}bad{%- endif -%}
+{% endmacro %}
+
+{% macro finding_card(f) %}
+<article class="finding sev-{{ f.severity }}">
+  <header>
+    <h4>{{ f.title }}</h4>
+    <span class="sev status {{ 'bad' if f.severity == 'Critical' else 'warn' if f.severity in ('High','Medium') else 'good' }}">{{ f.severity_zh or f.severity }}</span>
+  </header>
+  <div class="rows">
+    <div class="{{ 'full' if not f.fix }}"><h5>证据</h5><p>{{ f.evidence }}</p></div>
+    {% if f.fix %}<div><h5>修复建议{% if f.layer_zh %} · {{ f.layer_zh }}{% endif %}</h5><p>{{ f.fix }}</p></div>{% endif %}
+    <div><h5>影响</h5><p>{{ f.impact }}</p></div>
+    <div><h5>置信度</h5><p>{{ f.confidence_zh or f.confidence }}</p></div>
+  </div>
+</article>
+{% endmacro %}
+
+{% macro not_measured(what, how) %}
+<div class="chart-fallback"><b>未测量 · {{ what }}</b> — 可由以下方式获取：{{ how }}</div>
+{% endmacro %}

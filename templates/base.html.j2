@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ report.domain }} — GEO 官网优化报告 · {{ report.audit_date }}</title>
+<style>
+:root{
+  --paper:#ebe6da;--white:#fffdf8;--warm:#f4efe5;--warm-2:#efe9dc;--surface:#faf7f0;
+  --ink:#27231f;--ink-2:#4a443b;--muted:#7d7466;--faint:#9a9081;
+  --line:#ded6c8;--line-soft:#e7dfd1;--line-strong:#d3c9b8;
+  --brown:#211d1a;--orange:#c9552c;--orange-deep:#a8431f;
+  --green:#52765e;--green-bg:#e9efe8;--green-line:#c2d2c1;
+  --amber:#a96a34;--amber-bg:#f6ecdc;--amber-line:#e4cfae;
+  --red:#a75b4a;--red-bg:#f5e6e1;--red-line:#e0bfb5;
+  --blue:#5b7ba7;--blue-bg:#e6ecf4;--blue-line:#c3cfdf;
+  --r-sm:7px;--r-md:10px;--r-lg:14px;
+  --shadow:0 1px 2px rgba(61,48,34,.05),0 10px 28px rgba(61,48,34,.06);
+  --shadow-flat:0 1px 2px rgba(61,48,34,.04);
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  --serif:Georgia,"Songti SC","STSong",serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;background:var(--paper)}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.75 "PingFang SC","Microsoft YaHei",Arial,sans-serif;-webkit-font-smoothing:antialiased}
+h1,h2,h3,p{margin-top:0}
+a{color:inherit;text-underline-offset:3px;word-break:break-all}
+.cover{padding:36px 24px;background:linear-gradient(135deg,#201c19 0%,#211d1a 56%,#2a211d 100%);color:#f7f2e9;position:relative;overflow:hidden}
+.cover:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 83% 20%,rgba(201,85,44,.12),transparent 30%);pointer-events:none}
+.cover-inner{position:relative;width:min(1045px,100%);margin:auto}
+.eyebrow{margin:0;color:#d7663c;font:700 11px/1.4 var(--mono);letter-spacing:.18em;text-transform:uppercase}
+.cover h1{margin:18px 0 0;font:400 clamp(38px,4.5vw,60px)/1.05 var(--serif);letter-spacing:-.045em;color:#fbf7ef;overflow-wrap:anywhere}
+.cover h1 .report-title{display:block;margin-top:14px;color:#a69d92;font:400 clamp(15px,1.8vw,19px)/1.4 "PingFang SC",sans-serif;letter-spacing:.02em}
+.layout{width:min(1240px,100%);margin:auto;display:grid;grid-template-columns:210px minmax(0,1fr);gap:32px;padding:48px 24px 80px}
+.toc{position:sticky;top:24px;align-self:start;padding:12px 0 12px 20px;border-left:1px solid var(--line-strong)}
+.toc h2{margin:0 0 14px;color:var(--faint);font:700 11px/1.4 var(--mono);letter-spacing:.14em;text-transform:uppercase}
+.toc-group{margin-bottom:14px}
+.toc-group:last-child{margin-bottom:0}
+.toc-group-title{margin:0 0 6px;color:var(--ink);font:700 11.5px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.toc-group-priority .toc-group-title{color:var(--orange)}
+.toc-group-appendix .toc-group-title{color:var(--faint)}
+.toc a{display:block;padding:4px 0 4px 12px;color:var(--muted);text-decoration:none;font-size:12px;line-height:1.45;border-left:1px solid transparent;margin-left:-1px}
+.toc a:hover{color:var(--orange)}
+.toc a.toc-sub{position:relative}
+.toc a.toc-sub:before{content:"";position:absolute;left:0;top:50%;width:6px;height:1px;background:var(--line-strong);transform:translateY(-50%)}
+.content{min-width:0}
+
+/* ── Report Group 层级（LEVEL 1 > LEVEL 2 > LEVEL 3 视觉降级）── */
+/* Group wrapper：一组 section 的容器，形成视觉分组 */
+.report-group{margin-bottom:36px}
+.report-group:last-child{margin-bottom:0}
+
+/* Group header：在整组之上建立一级层级 */
+.group-head{display:flex;align-items:baseline;gap:14px;margin:0 0 18px;padding:0 4px}
+.group-no{color:var(--orange);font:italic 400 20px/1 var(--serif)}
+.group-head h2{margin:0;font:400 22px/1.3 var(--serif);letter-spacing:-.02em;color:var(--ink)}
+.group-head p{margin:0;color:var(--muted);font-size:12px}
+.group-tag{margin-left:auto;padding:2px 8px;border-radius:4px;font:700 10px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--warm)}
+
+/* 不同 Group 的视觉权重 */
+.report-group-executive .group-head h2{font-size:24px}
+.report-group-priority .group-head h2{color:var(--orange)}
+.report-group-appendix .group-head h2{color:var(--muted);font-size:18px}
+.report-group-appendix .group-no{color:var(--faint)}
+
+/* 组内 section 微调：executive 突出，appendix 降级 */
+.report-group-executive .section{box-shadow:var(--shadow)}
+.report-group-appendix .section{background:var(--surface);box-shadow:var(--shadow-flat);border-style:dashed}
+.report-group-appendix .section-head{border-bottom-style:dashed}
+.report-group-appendix .section-head h2{color:var(--ink-2)}
+
+.section{padding:40px 32px 44px;margin:0 0 24px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--white);box-shadow:var(--shadow);scroll-margin-top:20px}
+.report-group .section:last-child{margin-bottom:0}
+.section-head{display:flex;align-items:flex-start;gap:16px;margin-bottom:26px;padding-bottom:20px;border-bottom:1px solid var(--line-soft)}
+.section-no{flex:0 0 auto;color:var(--orange);font:italic 24px/1.15 var(--serif)}
+.section-head h2{margin:0 0 6px;color:var(--ink);font:400 26px/1.25 var(--serif);letter-spacing:-.02em}
+.section-head p{margin-bottom:0;color:var(--muted);font-size:13px;line-height:1.7}
+.section-tag{margin-left:auto;flex:0 0 auto;align-self:center;padding:4px 12px;border-radius:999px;font:700 11px/1.5 var(--mono);letter-spacing:.06em}
+
+/* 子章节头（Group 内二级 section 使用，视觉权重低于 section-head） */
+.sub-head{display:flex;align-items:center;gap:12px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px dashed var(--line-soft)}
+.sub-head h3{margin:0 0 4px;color:var(--ink-2);font:400 19px/1.3 var(--serif);letter-spacing:-.01em}
+.sub-head p{margin:0;color:var(--muted);font-size:12px;line-height:1.6}
+.verdict{padding:28px;border:1px solid var(--line-soft);border-left:3px solid var(--orange);border-radius:var(--r-md);background:var(--warm)}
+.verdict small{color:var(--orange);font:700 11px/1.4 var(--mono);letter-spacing:.12em;text-transform:uppercase}
+.verdict h3{margin:14px 0 10px;font:400 22px/1.5 var(--serif)}
+.verdict p{margin-bottom:0;color:var(--ink-2);font-size:14px;line-height:1.8}
+.scoreboard{display:grid;grid-template-columns:264px minmax(0,1fr);border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);overflow:hidden;box-shadow:var(--shadow-flat)}
+.total{padding:24px 22px;color:#f8f3ea;background:var(--brown)}
+.total .score-label{display:block;margin-bottom:8px;color:#8f877d;font:700 10px/1.4 var(--mono);letter-spacing:.16em;text-transform:uppercase}
+.total b{display:block;font:400 56px/.95 var(--serif);letter-spacing:-.04em}
+.total .score-max{color:#8f877d;font:400 18px/1 var(--serif)}
+.total strong{display:inline-block;margin-top:12px;padding:3px 10px;border:1px solid rgba(228,160,128,.4);border-radius:999px;color:#e4a080;font:400 13px/1.5 var(--serif)}
+.bars{padding:20px 24px;background:var(--white);display:flex;flex-direction:column;justify-content:center}
+.chart-radar{width:100%;height:340px}
+.total-gauge{margin-top:4px}
+.chart.chart-gauge{height:230px}
+.bar-label{display:flex;justify-content:space-between;margin-bottom:6px;color:var(--ink-2);font-size:13px;font-weight:600}
+.bar-score{color:var(--muted);font:500 12px/1.4 var(--mono)}
+.track{height:5px;border-radius:999px;background:var(--warm-2);overflow:hidden}
+.track i{display:block;height:100%;background:var(--orange);border-radius:999px}
+.track i.green{background:var(--green)}.track i.amber{background:var(--amber)}.track i.red{background:var(--red)}
+.card{border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);box-shadow:var(--shadow-flat);overflow:hidden;margin-bottom:16px}
+.card>header{padding:16px 22px;background:var(--warm);border-bottom:1px solid var(--line-soft);display:flex;justify-content:space-between;align-items:center;gap:16px}
+.card>header h3{margin:0;font:400 17px/1.4 var(--serif)}
+.card .pad{padding:16px 22px}
+.status{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font:700 11px/1.5 var(--mono);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;border:1px solid}
+.status.good{color:var(--green);background:var(--green-bg);border-color:var(--green-line)}
+.status.warn{color:var(--amber);background:var(--amber-bg);border-color:var(--amber-line)}
+.status.bad{color:var(--red);background:var(--red-bg);border-color:var(--red-line)}
+.status.info{color:var(--blue);background:var(--blue-bg);border-color:var(--blue-line)}
+.finding{border:1px solid var(--line);border-left:3px solid var(--orange);border-radius:var(--r-md);background:#fffdf8;margin-bottom:14px;overflow:hidden}
+.finding.sev-Critical{border-left-color:var(--red)}
+.finding.sev-High{border-left-color:var(--orange)}
+.finding.sev-Medium{border-left-color:var(--amber)}
+.finding.sev-Low{border-left-color:var(--green)}
+.finding header{padding:13px 20px;display:flex;align-items:center;gap:12px;background:var(--warm)}
+.finding header h4{margin:0;color:var(--ink);font:600 14.5px/1.5 "PingFang SC",sans-serif}
+.finding header .sev{margin-left:auto}
+.finding .rows{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--line)}
+.finding .rows>div{padding:13px 20px;min-width:0}
+.finding .rows>div+div{border-left:1px solid var(--line)}
+.finding .rows .full{grid-column:1/-1}
+.finding .rows .full+div{border-left:0;border-top:1px solid var(--line)}
+.finding h5{margin:0 0 6px;color:var(--faint);font:700 10px/1.5 var(--mono);letter-spacing:.12em;text-transform:uppercase}
+.finding p{margin:0;color:var(--ink-2);font-size:13px;line-height:1.7;overflow-wrap:anywhere;word-break:break-word}
+
+/* ── 附录折叠 Finding ─────────────────────────────────── */
+.finding-fold{border:1px solid var(--line);border-radius:var(--r-md);background:#fffdf8;margin-bottom:10px;overflow:hidden}
+.finding-fold-summary{cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:12px;padding:13px 20px;background:var(--warm);transition:background .15s}
+.finding-fold-summary:hover{background:var(--warm-2)}
+.finding-fold-summary::-webkit-details-marker{display:none}
+.finding-fold-summary .fold-icon{flex:0 0 auto;display:inline-block;transition:transform .15s;font-size:10px;color:var(--muted)}
+.finding-fold[open] .finding-fold-summary .fold-icon{transform:rotate(90deg)}
+.finding-fold-title{flex:1;min-width:0;font:600 14px/1.5 "PingFang SC",sans-serif;color:var(--ink);overflow-wrap:anywhere;word-break:break-word}
+.finding-fold-summary .sev{margin-left:auto;flex:0 0 auto}
+.finding-fold-body{border-top:1px solid var(--line)}
+.finding-col{padding:16px 20px;min-width:0}
+.finding-col + .finding-col{border-top:1px solid var(--line-soft)}
+.finding-col h5{margin:0 0 8px;color:var(--faint);font:700 10px/1.5 var(--mono);letter-spacing:.12em;text-transform:uppercase}
+.finding-col p{margin:0;color:var(--ink-2);font-size:13px;line-height:1.7;overflow-wrap:anywhere;word-break:break-word}
+/* 附录 · meta 纯文本行（置信度 · 层级 · 返回链接） */
+.finding-meta{display:flex;align-items:center;padding:12px 20px;font-size:11px;color:var(--faint);border-bottom:1px solid var(--line-soft)}
+.finding-meta .appendix-back{margin-left:auto;font-size:11px;color:var(--orange);text-decoration:none}
+.finding-meta .appendix-back:hover{text-decoration:underline}
+/* 附录 · 修复建议（橙色标题突出） */
+.finding-fix-head{display:flex;align-items:baseline}
+.finding-fix h5{color:var(--orange);font-weight:700}
+.finding-fix h5::before{content:"→ ";font-weight:400}
+.finding-owner{margin-left:auto;font:500 10.5px/1.5 var(--mono);color:var(--faint)}
+/* 附录 · 代码示例深色终端风（在修复建议内部，不独占行） */
+.finding-fix .code-fold{margin-top:10px}
+.finding-fix .code-fold summary{cursor:pointer;user-select:none;list-style:none;display:inline-flex;align-items:center;gap:5px;padding:0;background:none;border:none;font:700 10px/1.5 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--orange);transition:color .15s}
+.finding-fix .code-fold summary:hover{color:var(--orange-deep)}
+.finding-fix .code-fold summary .fold-icon{font-size:10px;transition:transform .15s}
+.finding-fix .code-fold[open] summary .fold-icon{transform:rotate(90deg)}
+.finding-fix .code-example{margin-top:8px;padding:12px 14px;background:#211d1a;border-radius:var(--r-sm);overflow-x:auto}
+.finding-fix .code-example code{font:13px/1.6 var(--mono);color:#e4a080;white-space:pre}
+/* 自由文本容器统一断词：证据/建议/路线图等常含超长无空格 token（URL、语言代码串） */
+.finding p,.priority-body p,.priority-header h4,.page-rec-item p,.page-rec-item h4,
+.roadmap-actions li,.roadmap-desc,.verdict p,.bigflag p,.bigflag h3,.plan-item p,
+.top-priority p,.top-priority h4,.chart-card .pad p,table.data td{overflow-wrap:anywhere;word-break:break-word}
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+.chart-grid .span2{grid-column:1/-1}
+.chart-grid .view-fold{margin-top:0}
+.chart-card{border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);box-shadow:var(--shadow-flat);overflow:hidden}
+.chart-card header{padding:14px 20px;background:var(--warm);border-bottom:1px solid var(--line-soft)}
+.chart-card header h3{margin:0;font:400 16px/1.4 var(--serif)}
+.chart-card header small{display:block;margin-top:2px;color:var(--muted);font-size:11.5px}
+.chart-body{padding:8px 12px 14px;min-height:110px}
+/* 非图表的文本型内容体：与卡片头（14/20）水平对齐，补足四周留白 */
+.chart-card .pad{padding:16px 20px 20px}
+.chart{width:100%;height:280px}
+.chart.tall{height:330px}.chart.short{height:200px}
+.chart-fallback{padding:26px 22px;color:var(--muted);font-size:13px;line-height:1.7;background:var(--surface);border:1px dashed var(--line-strong);border-radius:var(--r-md);text-align:center}
+.chart-fallback b{color:var(--ink-2)}
+table.data{width:100%;border-collapse:collapse;font-size:12.5px}
+table.data th{padding:8px 10px;text-align:left;color:var(--faint);font:700 10px/1.5 var(--mono);letter-spacing:.1em;text-transform:uppercase;border-bottom:1px solid var(--line-strong)}
+table.data td{padding:8px 10px;border-bottom:1px solid var(--line-soft);color:var(--ink-2);vertical-align:top;line-height:1.55}
+table.data tr:last-child td{border-bottom:0}
+/* 省略号单元格：单行截断 + hover 亮出完整 title */
+.ellipsis{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:top;cursor:pointer}
+td.col-ellipsis{max-width:0}  /* 配合 table-layout:fixed 生效 */
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.dot.green{background:var(--green)}.dot.amber{background:var(--amber)}.dot.red{background:var(--red)}.dot.grey{background:var(--faint)}.dot.blue{background:var(--blue)}
+.bigflag{padding:18px 22px;border-radius:var(--r-md);border:1px solid;margin-bottom:16px}
+.bigflag.bad{background:var(--red-bg);border-color:var(--red-line)}
+.bigflag.good{background:var(--green-bg);border-color:var(--green-line)}
+.bigflag h3{margin:0 0 6px;font:400 17px/1.4 var(--serif)}
+.bigflag.bad h3{color:var(--red)}.bigflag.good h3{color:var(--green)}
+.bigflag p{margin:0;font-size:13px;color:var(--ink-2)}
+.plan-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.plan-col{border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);overflow:hidden}
+.plan-col>header{padding:14px 18px;background:var(--warm);border-bottom:1px solid var(--line-soft)}
+.plan-col>header h3{margin:0;font:400 16px/1.4 var(--serif)}
+.plan-col>header small{color:var(--muted);font-size:11.5px}
+.plan-item{padding:14px 18px;border-bottom:1px solid var(--line-soft)}
+.plan-item:last-child{border-bottom:0}
+.plan-item p{margin:0 0 8px;font-size:13px;color:var(--ink);font-weight:600;line-height:1.5}
+.plan-item .meta{display:flex;gap:6px;flex-wrap:wrap}
+.plan-item .meta span{padding:2px 8px;border:1px solid var(--line-soft);border-radius:4px;background:var(--surface);font:500 10.5px/1.6 var(--mono);color:var(--muted)}
+.plan-item .meta span:first-child{border-color:var(--orange-soft,#f1d4c8);background:#faf0ea;color:var(--orange-deep);font-weight:700}
+footer{padding:36px 24px;text-align:center;color:var(--muted);border-top:1px solid var(--line)}
+footer strong{color:var(--ink-2);font:400 16px var(--serif);letter-spacing:.04em}
+
+/* ── 新增：优先级卡片 ──────────────────────────────────── */
+.priority-card{border:1px solid var(--line);border-left:3px solid var(--orange);border-radius:var(--r-md);background:#fffdf8;margin-bottom:14px;overflow:hidden}
+.priority-card.P0{border-left-color:var(--red)}
+.priority-card.P1{border-left-color:var(--orange)}
+.priority-card.P2{border-left-color:var(--amber)}
+.priority-card.P3{border-left-color:var(--green)}
+.priority-header{padding:13px 20px;display:flex;align-items:center;gap:12px;background:var(--warm)}
+.priority-header h4{margin:0;color:var(--ink);font:600 14.5px/1.5 "PingFang SC",sans-serif}
+.priority-header .priority-tag{margin-left:auto;flex:0 0 auto;padding:3px 10px;border-radius:999px;font:700 11px/1.5 var(--mono);letter-spacing:.04em}
+.priority-tag.P0{color:var(--red);background:var(--red-bg);border:1px solid var(--red-line)}
+.priority-tag.P1{color:var(--orange);background:var(--amber-bg);border:1px solid var(--orange-line)}
+.priority-tag.P2{color:var(--amber);background:var(--amber-bg);border:1px solid var(--amber-line)}
+.priority-tag.P3{color:var(--green);background:var(--green-bg);border:1px solid var(--green-line)}
+.priority-body{padding:13px 20px}
+.priority-body p{margin:0 0 8px;font-size:13px;color:var(--ink-2);line-height:1.7}
+.priority-body .code-example{margin-top:12px;padding:14px 16px;background:#211d1a;border-radius:var(--r-sm);overflow-x:auto}
+.priority-body .code-example code{font:11px/1.6 var(--mono);color:#e4a080;white-space:pre}
+
+/* ── 新增：页面建议 ───────────────────────────────────── */
+.page-type-head{margin:18px 0 12px;padding:0 0 8px;border-bottom:1px solid var(--line-soft);font:600 13px/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.page-type-head:first-of-type{margin-top:0}
+.page-rec{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:16px}
+.page-rec-item{border:1px solid var(--line);border-radius:var(--r-md);padding:16px 20px;background:var(--white);box-shadow:var(--shadow-flat)}
+.page-rec-item .page-type{display:inline-block;padding:2px 8px;border-radius:4px;background:var(--warm);color:var(--ink-3);font:600 10px/1.4 var(--mono);text-transform:uppercase;margin-bottom:8px}
+.page-rec-item h4{margin:0 0 8px;font:600 14px/1.4 "PingFang SC",sans-serif}
+.page-rec-item p{margin:0 0 8px;font-size:12.5px;color:var(--ink-2);line-height:1.7}
+.page-rec-item .rec-text{font-size:12.5px;color:var(--muted);line-height:1.7}
+.code-fold summary:hover{background:rgba(0,0,0,.07)!important;color:var(--ink)!important}
+.code-fold summary::-webkit-details-marker{display:none}
+.code-fold[open] summary .fold-icon{transform:rotate(90deg)}
+.code-fold[open] summary .fold-label::after{content:"（点击收起）"}
+.code-fold:not([open]) summary .fold-label::after{content:""}
+
+/* ── 新增：Roadmap 路线图 ──────────────────────────────── */
+.roadmap{position:relative;padding-left:28px;margin-bottom:24px}
+.roadmap:before{content:"";position:absolute;left:9px;top:0;bottom:0;width:2px;background:var(--line-strong)}
+.roadmap-phase{position:relative;margin-bottom:24px}
+.roadmap-phase:before{content:"";position:absolute;left:-23px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--orange);border:2px solid var(--white)}
+.roadmap-phase.phase-1:before{background:var(--red)}
+.roadmap-phase.phase-2:before{background:var(--orange)}
+.roadmap-phase.phase-3:before{background:var(--green)}
+.roadmap-header{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}
+.roadmap-header h3{margin:0;font:600 16px/1.4 "PingFang SC",sans-serif}
+.roadmap-header .phase-tag{padding:2px 8px;border-radius:4px;background:var(--warm);color:var(--ink-3);font:600 10px/1.4 var(--mono)}
+.roadmap-desc{color:var(--muted);font-size:13px;margin-bottom:10px}
+.roadmap-actions{list-style:none;margin:0;padding:0}
+.roadmap-actions li{position:relative;padding:6px 0 6px 20px;font-size:13px;color:var(--ink-2);border-bottom:1px solid var(--line-soft)}
+.roadmap-actions li:last-child{border-bottom:0}
+.roadmap-actions li:before{content:"→";position:absolute;left:0;color:var(--orange)}
+
+/* ── 新增：Top Priorities 优先事项 ────────────────────── */
+.top-priority{display:flex;gap:16px;padding:20px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);margin-bottom:14px;box-shadow:var(--shadow-flat)}
+.top-priority .priority-num{flex:0 0 auto;width:40px;height:40px;border-radius:50%;background:var(--warm);color:var(--orange);font:600 16px/40px var(--serif);text-align:center}
+.top-priority .priority-content{flex:1}
+.top-priority h4{margin:0 0 6px;font:600 15px/1.4 "PingFang SC",sans-serif}
+.top-priority p{margin:0;font-size:13px;color:var(--ink-2);line-height:1.7}
+
+/* ── Top Issue（决策层）：Priority 组的核心卡片 ─────────── */
+/* 三张卡片视觉权重一致，阅读路径：标题 + chips + 交叉引用 → 为什么重要 → 证据 → 建议动作 */
+.top-issue{border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow-flat)}
+
+.top-issue-head{display:flex;align-items:center;gap:16px;padding:16px 24px;background:var(--warm);border-bottom:1px solid var(--line-soft)}
+.top-issue-headline{flex:1;min-width:0}
+.top-issue-title{margin:0;font:600 16px/1.45 "PingFang SC",sans-serif;color:var(--ink);letter-spacing:-.005em}
+
+/* 交叉引用：放在 header 右端，与标题垂直居中对齐 */
+.issue-crossref{flex:0 0 auto;margin-left:auto;font-size:12px;line-height:1.45;color:var(--muted);white-space:nowrap}
+.issue-crossref a{color:var(--orange);text-decoration:none;font-weight:500}
+.issue-crossref a:hover{text-decoration:underline}
+
+/* 单列垂直流 */
+.top-issue-body{padding:4px 0}
+.issue-block{padding:12px 24px;border-bottom:1px dashed var(--line-soft)}
+.issue-block:last-child{border-bottom:0}
+.issue-block h5{margin:0 0 6px;color:var(--faint);font:700 10.5px/1.5 var(--mono);letter-spacing:.14em;text-transform:uppercase}
+.issue-block p{margin:0;font-size:13.5px;color:var(--ink-2);line-height:1.75;overflow-wrap:anywhere;word-break:break-word}
+
+/* 建议动作：作为视觉终点，整块高亮（暖色渐变背景） */
+.issue-fix{margin:10px 16px 12px;background:linear-gradient(135deg, #f4efe5 0%, #f6ecdc 100%);border:1px solid #e4cfae;border-radius:var(--r-sm);padding:14px 20px}
+.issue-fix h5{color:var(--orange)}
+.issue-fix p{color:var(--ink);font-weight:500}
+
+/* ═══════════ 行动方案（GROUP 03 统一行动卡片）═══════════ */
+.action-tier{margin-bottom:28px}
+.action-tier:last-of-type{margin-bottom:0}
+.action-tier-head{display:flex;align-items:baseline;gap:12px;margin:0 0 8px;padding:0}
+.action-tier-title{margin:0;font:600 12px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.action-tier-P0 .action-tier-title{color:var(--red)}
+.action-tier-P1 .action-tier-title{color:var(--orange)}
+.action-tier-P2 .action-tier-title{color:var(--amber)}
+.action-tier-P3 .action-tier-title{color:var(--green)}
+.action-tier-hint{color:var(--muted);font-size:11px}
+
+/* 行动卡片：视觉与 top-issue 对齐，带 ID anchor */
+.action-card{border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);margin-bottom:14px;overflow:hidden;box-shadow:var(--shadow-flat);scroll-margin-top:20px}
+.action-card-head{display:flex;align-items:center;gap:14px;padding:14px 22px;background:var(--warm);border-bottom:1px solid var(--line-soft)}
+.action-card-id{flex:0 0 auto;color:var(--orange);font:700 12px/1.4 var(--mono);letter-spacing:.06em;min-width:32px}
+.action-card-P0 .action-card-id{color:var(--red)}
+.action-card-P1 .action-card-id{color:var(--orange)}
+.action-card-P2 .action-card-id{color:var(--amber)}
+.action-card-P3 .action-card-id{color:var(--green)}
+.action-card-title{margin:0;flex:1;font:600 15px/1.45 "PingFang SC",sans-serif;color:var(--ink)}
+.action-card-meta{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.action-chip{padding:2px 8px;border-radius:4px;font:600 10px/1.5 var(--mono);letter-spacing:.04em;background:var(--surface);color:var(--muted);border:1px solid var(--line-soft);white-space:nowrap}
+.action-chip.impact-high{color:var(--red);background:var(--red-bg);border-color:var(--red-line)}
+.action-chip.impact-med{color:var(--amber);background:var(--amber-bg);border-color:var(--amber-line)}
+.action-chip.impact-low{color:var(--green);background:var(--green-bg);border-color:var(--green-line)}
+
+.action-card-body{padding:4px 0}
+.action-block{padding:12px 22px;border-bottom:1px dashed var(--line-soft)}
+.action-block:last-child{border-bottom:0}
+.action-block h6{margin:0 0 6px;color:var(--faint);font:700 10.5px/1.5 var(--mono);letter-spacing:.14em;text-transform:uppercase}
+.action-block p{margin:0;font-size:13.5px;color:var(--ink-2);line-height:1.75;overflow-wrap:anywhere;word-break:break-word}
+
+.action-fix{margin:10px 16px 12px;background:linear-gradient(135deg, #f4efe5 0%, #f6ecdc 100%);border:1px solid #e4cfae;border-radius:var(--r-sm);padding:14px 20px}
+.action-fix h6{color:var(--orange)}
+.action-fix p{color:var(--ink);font-weight:500}
+
+/* 行动卡内代码示例 */
+.action-fix .code-fold{margin-top:12px}
+.action-fix .code-fold summary{cursor:pointer;user-select:none;list-style:none;display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(0,0,0,.04);border:1px solid var(--line);border-radius:var(--r-sm);font:12px var(--sans);color:var(--muted);transition:background .15s}
+.action-fix .code-fold summary:hover{background:rgba(0,0,0,.07);color:var(--ink)}
+.action-fix .code-fold summary::-webkit-details-marker{display:none}
+.action-fix .code-fold[open] summary .fold-icon{transform:rotate(90deg)}
+.action-fix .code-fold .fold-icon{display:inline-block;transition:transform .15s;font-size:10px}
+.action-fix .code-example{margin-top:8px;padding:12px;background:#211d1a;border-radius:var(--r-sm);overflow-x:auto}
+.action-fix .code-example code{font:11px/1.6 var(--mono);color:#e4a080;white-space:pre}
+
+/* 折叠视图（按页面） */
+.view-fold{margin-top:20px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);overflow:hidden;box-shadow:var(--shadow-flat)}
+.view-fold-summary{cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:12px;padding:14px 22px;background:var(--warm);transition:background .15s}
+.view-fold-summary:hover{background:var(--warm-2)}
+.view-fold-summary::-webkit-details-marker{display:none}
+.view-fold-summary .fold-icon{flex:0 0 auto;display:inline-block;transition:transform .15s;font-size:10px;color:var(--muted)}
+.view-fold[open] .view-fold-summary .fold-icon{transform:rotate(90deg)}
+.view-fold-title{font:600 14px/1.4 "PingFang SC",sans-serif;color:var(--ink)}
+.view-fold-hint{margin-left:auto;font-size:11.5px;color:var(--muted)}
+.view-fold-body{padding:18px 22px;border-top:1px solid var(--line-soft)}
+
+.view-group{margin-bottom:18px}
+.view-group:last-child{margin-bottom:0}
+.view-group-title{margin:0 0 8px;font:600 12px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.view-group-desc{margin:0 0 10px;font-size:12px;color:var(--muted)}
+.view-group-owner{margin:10px 0 0;font-size:11.5px;color:var(--muted)}
+
+/* Issue 引用列表（只列编号 + 短标题 + 锚点链接） */
+.issue-ref-list{list-style:none;margin:0;padding:0}
+.issue-ref-item{display:flex;align-items:baseline;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line-soft);font-size:13px;color:var(--ink-2);line-height:1.6}
+.issue-ref-item:last-child{border-bottom:0}
+.issue-ref-id{flex:0 0 auto;font:700 11px/1.5 var(--mono);letter-spacing:.06em;color:var(--orange);text-decoration:none;padding:2px 6px;border-radius:3px;background:var(--warm);border:1px solid var(--line-soft)}
+.issue-ref-id:hover{background:var(--warm-2);text-decoration:underline}
+.issue-ref-id.issue-ref-independent{color:var(--muted);background:var(--surface);cursor:default}
+.issue-ref-id.issue-ref-independent:hover{background:var(--surface);text-decoration:none}
+.issue-ref-title{flex:1;min-width:0;overflow-wrap:anywhere;word-break:break-word}
+.issue-ref-detail{color:var(--muted);font-size:12px}
+.issue-ref-jump{flex:0 0 auto;color:var(--orange);font-size:13px;opacity:.6;transition:opacity .15s;text-decoration:none}
+.issue-ref-item:hover .issue-ref-jump{opacity:1}
+.issue-ref-jump:hover{text-decoration:none;color:var(--orange-deep)}
+/* 非 finding 行动：可展开行（badge + ▶ 展开全文） */
+.issue-ref-details{flex:1;min-width:0}
+.issue-ref-details summary{cursor:pointer;user-select:none;list-style:none;display:flex;align-items:baseline;gap:10px}
+.issue-ref-details summary::-webkit-details-marker{display:none}
+.issue-ref-details[open] .issue-ref-expand-icon{transform:rotate(90deg)}
+.issue-ref-badge{flex:0 0 auto;font:700 10px/1.5 var(--mono);letter-spacing:.06em;color:var(--muted);padding:2px 6px;border-radius:3px;background:var(--surface);border:1px solid var(--line-soft)}
+.issue-ref-expand-icon{flex:0 0 auto;font-size:9px;color:var(--faint);transition:transform .15s}
+.issue-ref-full{margin:8px 0 4px;padding-left:36px;font-size:12.5px;color:var(--ink-2);line-height:1.7}
+
+/* ── 各维度得分理由（GEO 就绪度评分下方折叠面板）───────── */
+.dim-note-list{list-style:none;margin:0;padding:0}
+.dim-note-item{padding:12px 0;border-bottom:1px dashed var(--line-soft)}
+.dim-note-item:last-child{border-bottom:0}
+.dim-note-head{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
+.dim-note-name{font:600 14px/1.4 "PingFang SC",sans-serif;color:var(--ink)}
+.dim-note-weight{font:500 10.5px/1.4 var(--mono);letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.dim-note-score{margin-left:auto;font:400 18px/1.2 var(--serif);color:var(--orange)}
+.dim-note-max{font-size:12px;color:var(--muted)}
+.dim-note-text{margin:0;font-size:13px;color:var(--ink-2);line-height:1.7;overflow-wrap:anywhere;word-break:break-word}
+.dim-note-empty{color:var(--faint);font-style:italic}
+
+@media(max-width:760px){
+  .top-issue-head{flex-wrap:wrap;gap:10px}
+  .issue-crossref{margin-left:0}
+  .action-card-head{flex-wrap:wrap}
+  .action-card-meta{margin-left:0;width:100%}
+}
+
+@media(max-width:1050px){
+  .layout{grid-template-columns:1fr;padding:32px 20px 64px}
+  .toc{display:none}
+  .scoreboard{grid-template-columns:1fr}
+  .chart-grid{grid-template-columns:1fr}
+  .plan-grid{grid-template-columns:1fr}
+  .page-rec{grid-template-columns:1fr}
+}
+@media print{
+  .cover{min-height:auto;padding:28px 24px;background:#201c19!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .toc{display:none}
+  .section,.card,.finding,.chart-card{break-inside:avoid;box-shadow:none!important}
+  body{background:#fff}
+}
+
+/* 优化方向 ·「示例」链接 + 全局 tooltip（挂在 body 下，不被 .card overflow:hidden 截断） */
+.hint-link{display:inline-block;padding:2px 8px;border:1px solid var(--orange);border-radius:3px;color:var(--orange);font-size:11px;text-decoration:none;cursor:pointer;background:#fffdf8;line-height:1.5;transition:background .15s,color .15s}
+.hint-link:hover{background:var(--orange);color:#fff}
+/* 章节标题旁的感叹号 icon（hover 显示副标题） */
+.sub-head-title-row{display:flex;align-items:center;gap:6px}
+.sub-head-title-row h3{margin:0}
+span.hint-icon{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1px solid var(--muted);border-radius:50%;color:var(--muted);font:500 9px/12px var(--mono);cursor:pointer;flex:0 0 auto;transition:color .15s,border-color .15s;box-sizing:border-box;text-align:center}
+span.hint-icon:hover{color:var(--orange);border-color:var(--orange)}
+#hint-tip{position:fixed;z-index:1000;display:none;max-width:360px;padding:12px 14px;background:#fffdf8;border:1px solid var(--line-strong);border-radius:6px;box-shadow:0 6px 20px rgba(39,35,31,.12);color:var(--ink);font-size:12px;line-height:1.7;pointer-events:none;white-space:normal;text-align:left}
+
+/* 行动清单 · 标签切换（嵌入 sub-head 右端） */
+.action-tabs{display:inline-flex;gap:0;margin:0;margin-left:auto;border:1px solid var(--line);border-radius:5px;overflow:hidden;background:var(--surface);flex:0 0 auto}
+.action-tab{padding:5px 12px;background:transparent;border:none;font:500 11.5px/1.5 "PingFang SC",sans-serif;color:var(--muted);cursor:pointer;transition:background .15s,color .15s;border-right:1px solid var(--line)}
+.action-tab:last-child{border-right:none}
+.action-tab:hover{color:var(--ink);background:var(--warm)}
+.action-tab.active{color:var(--orange);background:var(--white);font-weight:600}
+.action-view{display:none}
+.action-view.active{display:block}
+
+/* 附录 · 返回链接与高亮动画 */
+.appendix-back{margin-left:auto;font-size:12px;color:var(--orange);text-decoration:none}
+.appendix-back:hover{text-decoration:underline}
+.finding-meta-row{display:flex;gap:6px;align-items:center;padding:12px 22px 0;margin-bottom:4px}
+@keyframes appendix-flash{0%{background:#fdf3e7}100%{background:#fffdf8}}
+.finding-fold.flash{animation:appendix-flash 1.5s ease-out}
+</style>
+{% if offline and echarts_js %}
+<script>{{ echarts_js | safe }}</script>
+{% else %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+{% endif %}
+</head>
+<body>
+
+<header class="cover">
+  <div class="cover-inner">
+    <p class="eyebrow">GEO 官网优化报告 · {{ report.audit_date }}</p>
+    <h1>{{ report.domain }}<span class="report-title">诊断 · 分析 · 建议</span></h1>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="toc">
+    <h2>报告目录</h2>
+
+    {# GROUP 01 — EXECUTIVE OVERVIEW #}
+    <div class="toc-group">
+      <div class="toc-group-title">01 总览</div>
+      <a href="#geo-score" class="toc-sub">分析总结 · GEO 就绪度评分</a>
+    </div>
+
+    {# GROUP 02 — GEO DIAGNOSIS #}
+    <div class="toc-group">
+      <div class="toc-group-title">02 诊断分析</div>
+      <a href="#crawler-access" class="toc-sub">AI 爬虫可达性</a>
+      <a href="#technical" class="toc-sub">技术基础与内容时效</a>
+      <a href="#schema" class="toc-sub">品牌识别与 Schema</a>
+      <a href="#ai-citability" class="toc-sub">内容质量与引用度</a>
+    </div>
+
+    {# GROUP 03 — ACTION PLAN（决策 + 执行一体） #}
+    <div class="toc-group toc-group-priority">
+      <div class="toc-group-title">03 行动方案</div>
+      <a href="#action-plan" class="toc-sub">行动清单</a>
+    </div>
+
+    {# APPENDIX #}
+    <div class="toc-group toc-group-appendix">
+      <div class="toc-group-title">附录</div>
+      <a href="#appendix" class="toc-sub">问题技术证据</a>
+    </div>
+  </aside>
+
+  <main class="content">
+    {# ══════════════════════════════════════════════════════════
+       GROUP 01 — EXECUTIVE OVERVIEW
+       回答：这个网站目前 GEO 表现怎么样？
+       LEVEL 1 — Executive Information
+       ══════════════════════════════════════════════════════════ #}
+    <div class="report-group report-group-executive" id="group-executive">
+      <header class="group-head">
+        <span class="group-no">01</span>
+        <h2>总览</h2>
+        <p>Executive Overview · 10 秒看清 GEO 现状</p>
+        
+      </header>
+      {% include "sections/composite.html.j2" %}
+    </div>
+
+    {# ══════════════════════════════════════════════════════════
+       GROUP 02 — GEO DIAGNOSIS
+       回答：为什么是这个结果？
+       LEVEL 3 — Technical Evidence（诊断细节）
+       ══════════════════════════════════════════════════════════ #}
+    <div class="report-group report-group-diagnosis" id="group-diagnosis">
+      <header class="group-head">
+        <span class="group-no">02</span>
+        <h2>诊断分析</h2>
+        <p>GEO Diagnosis · 逐层定位问题根因</p>
+        
+      </header>
+      {% include "sections/crawlers.html.j2" %}
+      {% include "sections/technical.html.j2" %}
+      {% include "sections/schema.html.j2" %}
+      {% include "sections/citability.html.j2" %}
+    </div>
+
+    {# ══════════════════════════════════════════════════════════
+       GROUP 03 — ACTION PLAN
+       回答：怎么做？
+       每个 Issue 只写一次正文；按优先级 / 页面 / 时间三种视图切换。
+       LEVEL 2 — Strategic + Execution
+       ══════════════════════════════════════════════════════════ #}
+    <div class="report-group report-group-priority" id="group-action">
+      <header class="group-head">
+        <span class="group-no">03</span>
+        <h2>行动方案</h2>
+        <p>Action Plan · 优先级 · 页面</p>
+        
+      </header>
+      {% include "sections/action-plan.html.j2" %}
+    </div>
+
+    {# ══════════════════════════════════════════════════════════
+       APPENDIX — 技术证据与原始数据
+       LEVEL 3 — Raw Evidence
+       ══════════════════════════════════════════════════════════ #}
+    <div class="report-group report-group-appendix" id="group-appendix">
+      <header class="group-head">
+        <span class="group-no">04</span>
+        <h2>附录</h2>
+        <p>Appendix · 技术证据 · 详细数据 · 方法论</p>
+        
+      </header>
+      {% include "sections/appendix.html.j2" %}
+    </div>
+  </main>
+</div>
+
+<footer><strong>GEO 官网优化报告</strong> · {{ report.domain }} · {{ report.audit_date }}</footer>
+
+<div id="hint-tip" role="tooltip"></div>
+<script>
+(function () {
+  var tip = document.getElementById("hint-tip");
+  if (!tip) return;
+  function show(link) {
+    var text = link.getAttribute("data-hint") || "";
+    if (!text) return;
+    tip.textContent = text;
+    tip.style.display = "block";
+    tip.style.left = "0px"; tip.style.top = "0px";  // 先渲染再测量
+    var r = link.getBoundingClientRect();
+    var tw = tip.offsetWidth, th = tip.offsetHeight;
+    var x = Math.min(Math.max(8, r.left), window.innerWidth - tw - 8);
+    var y = r.top - th - 8;
+    if (y < 8) y = r.bottom + 8;  // 上方放不下时改到下方
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
+  }
+  function hide() { tip.style.display = "none"; }
+  document.addEventListener("mouseover", function (e) {
+    var link = e.target && e.target.closest && e.target.closest(".hint-link, .hint-icon");
+    if (link) show(link);
+  });
+  document.addEventListener("mouseout", function (e) {
+    var link = e.target && e.target.closest && e.target.closest(".hint-link, .hint-icon");
+    if (link) hide();
+  });
+  document.addEventListener("scroll", hide, true);
+})();
+</script>
+
+<script>
+/* 行动方案 · tab 切换（优先级 / 页面 / 时间） */
+(function () {
+  document.addEventListener("click", function (e) {
+    var tab = e.target && e.target.closest && e.target.closest(".action-tab");
+    if (!tab) return;
+    var viewName = tab.getAttribute("data-view");
+    var section = tab.closest(".section");
+    if (!section) return;
+    section.querySelectorAll(".action-tab").forEach(function (t) {
+      t.classList.toggle("active", t === tab);
+      t.setAttribute("aria-selected", t === tab ? "true" : "false");
+    });
+    section.querySelectorAll(".action-view").forEach(function (v) {
+      v.classList.toggle("active", v.getAttribute("data-view") === viewName);
+    });
+  });
+})();
+</script>
+
+<script>
+/* 附录跳转：平滑滚动 + 自动展开 details + 闪烁高亮 */
+(function () {
+  function flashTarget(el) {
+    // 若是 details 则自动展开
+    if (el.tagName === "DETAILS" && !el.open) el.open = true;
+    el.classList.remove("flash");
+    void el.offsetWidth;  // 强制 reflow 重置动画
+    el.classList.add("flash");
+  }
+  // 拦截所有指向 #appendix-XX 的锚点点击
+  document.addEventListener("click", function (e) {
+    var a = e.target && e.target.closest && e.target.closest('a[href^="#appendix-"]');
+    if (!a) return;
+    e.preventDefault();
+    var id = a.getAttribute("href").slice(1);
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    history.replaceState(null, "", "#" + id);
+    setTimeout(function () { flashTarget(el); }, 300);
+  });
+  // 页面加载时若 hash 指向附录条目，自动展开并闪烁
+  if (location.hash.startsWith("#appendix-")) {
+    var el = document.getElementById(location.hash.slice(1));
+    if (el) setTimeout(function () { flashTarget(el); el.scrollIntoView({ block: "start" }); }, 100);
+  }
+})();
+</script>
+
+<script type="application/json" id="report-data">{{ report_json | safe }}</script>
+<script type="application/json" id="chart-data">{{ chart_json | safe }}</script>
+{% include "sections/charts_js.html.j2" %}
+
+</body>
+</html>

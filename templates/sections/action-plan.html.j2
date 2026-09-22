@@ -1,0 +1,123 @@
+{% import "sections/_macros.html.j2" as m %}
+{#
+  GROUP 03 — 行动方案
+  紧凑清单：每行 = ID + 标题 + 一句话 why + chips + [→] 跳附录
+  证据/建议动作/代码示例已移至附录，此处不重复。
+  三个同级 tab：按优先级 / 按页面 / 按时间
+#}
+<section class="section" id="action-plan">
+  <div class="sub-head">
+    <div class="sub-head-title-row"><h3>行动清单</h3><span class="hint-icon" data-hint="每个问题只列一次。点击行跳转到附录查看完整证据与修复建议。">!</span></div>
+    {% if report.priority_actions and report.page_recommendations %}
+    <div class="action-tabs">
+      <button class="action-tab active" data-view="priority">按优先级</button>
+      <button class="action-tab" data-view="page">按页面</button>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if not report.priority_actions %}
+    <div class="chart-fallback">
+      <b>未测量</b> — 行动清单需要 agent 评分数据（Phase 2）生成。
+    </div>
+  {% else %}
+
+  {% set has_page_view = report.page_recommendations | length > 0 %}
+
+  {# ══════════ 视图 1：按优先级（紧凑清单，与按页面/按时间同风格） ══════════ #}
+  <div class="action-view active" data-view="priority">
+    {% for tier, tier_label, tier_hint in [
+        ("P0", "P0 · 立即修复", "0-7 天 · 阻碍 GEO 基础能力"),
+        ("P1", "P1 · 高优", "1-4 周 · 对 GEO 有明显影响"),
+        ("P2", "P2 · 优化", "1-3 月 · 优化项"),
+        ("P3", "P3 · 长期", "长期建设 · 持续投入"),
+    ] %}
+      {% set group = report.priority_actions | selectattr("priority", "equalto", tier) | list %}
+      {% if group %}
+      <div class="action-tier">
+        <header class="action-tier-head">
+          <h4 class="action-tier-title">{{ tier_label }}</h4>
+          <small class="action-tier-hint">{{ tier_hint }}</small>
+        </header>
+
+        <ul class="issue-ref-list">
+        {% for a in group %}
+          {% if a.finding_index >= 0 %}
+            {% set card_id = "%02d" % (a.finding_index + 1) %}
+          {% else %}
+            {% set card_id = "" %}
+          {% endif %}
+          <li class="issue-ref-item">
+            {% if card_id %}
+              <a href="#appendix-{{ card_id }}" class="issue-ref-id">#{{ card_id }}</a>
+              <span class="issue-ref-title">{{ a.title or a.action[:60] }}</span>
+              <a href="#appendix-{{ card_id }}" class="issue-ref-jump">→</a>
+            {% else %}
+              <details class="issue-ref-details">
+                <summary>
+                  <span class="issue-ref-badge">{{ a.effort_zh or a.effort }}</span>
+                  <span class="issue-ref-title">{{ a.title or a.action[:60] }}</span>
+                  <span class="issue-ref-expand-icon">▶</span>
+                </summary>
+                <p class="issue-ref-full">{{ a.action }}</p>
+              </details>
+            {% endif %}
+          </li>
+        {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  {# ══════════ 视图 2：按页面查看 ══════════ #}
+  {% if has_page_view %}
+  <div class="action-view" data-view="page">
+    {% set page_type_order = [
+        ("homepage", "首页 Homepage"),
+        ("product", "产品页 Product Pages"),
+        ("category", "分类页 Category Pages"),
+        ("faq", "FAQ"),
+        ("support", "支持"),
+        ("about", "关于 About"),
+        ("blog", "博客 Blog"),
+        ("news", "新闻"),
+        ("new-page", "新建页面"),
+    ] %}
+    {% set seen_types = [] %}
+    {% for key, label in page_type_order %}
+      {% set group = report.page_recommendations | selectattr("page_type", "equalto", key) | list %}
+      {% if group and key not in seen_types %}
+        {% set _ = seen_types.append(key) %}
+        <div class="view-group">
+          <h5 class="view-group-title">{{ label }}</h5>
+          <ul class="issue-ref-list">
+            {% for rec in group %}
+            <li class="issue-ref-item">
+              {% if rec.finding_index >= 0 %}
+                {% set ref_id = "%02d" % (rec.finding_index + 1) %}
+                <a href="#appendix-{{ ref_id }}" class="issue-ref-id">#{{ ref_id }}</a>
+                <span class="issue-ref-title">{{ rec.issue }}</span>
+                <a href="#appendix-{{ ref_id }}" class="issue-ref-jump">→</a>
+              {% else %}
+                <span class="issue-ref-title">{{ rec.issue }}</span>
+                <span class="issue-ref-detail"> — {{ rec.recommendation[:60] }}{% if rec.recommendation | length > 60 %}…{% endif %}</span>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if report.impact_estimate %}
+  <div class="verdict" style="margin-top:24px">
+    <small>预估影响</small>
+    <p style="margin-top:10px">{{ report.impact_estimate }}</p>
+  </div>
+  {% endif %}
+
+  {% endif %}
+</section>

@@ -1,0 +1,53 @@
+{% import "sections/_macros.html.j2" as m %}
+<section class="section" id="appendix">
+  {{ m.sub_head("问题技术证据", "全部 Findings 的完整证据、修复建议与代码示例。从行动清单点击行可跳转至此。", none, none) }}
+
+  {% if report.findings %}
+    {% for f in report.findings %}
+    {% set entry_id = "%02d" % loop.index %}
+    <details class="finding-fold sev-{{ f.severity }}" id="appendix-{{ entry_id }}">
+      <summary class="finding-fold-summary">
+        <span class="fold-icon">▶</span>
+        <span class="action-card-id">#{{ entry_id }}</span>
+        <span class="finding-fold-title">{{ f.title }}</span>
+        <span class="sev status {{ 'bad' if f.severity == 'Critical' else 'warn' if f.severity in ('High','Medium') else 'good' }}">{{ f.severity_zh or f.severity }}</span>
+      </summary>
+      <div class="finding-fold-body">
+        <div class="finding-meta">
+          <span>{{ f.confidence_zh }}{% if f.confidence_zh and f.layer_zh %} · {% endif %}{{ f.layer_zh }}</span>
+          <a href="#action-plan" class="appendix-back">← 返回行动清单</a>
+        </div>
+
+        <div class="finding-col">
+          <h5>业务影响</h5>
+          <p>{{ f.impact | autolink | safe }}</p>
+        </div>
+
+        <div class="finding-col">
+          <h5>证据</h5>
+          <p>{{ f.evidence | autolink | safe }}</p>
+        </div>
+
+        <div class="finding-col finding-fix">
+          <div class="finding-fix-head">
+            <h5>建议动作</h5>
+            {% if f.owner_zh %}<span class="finding-owner">负责人 · {{ f.owner_zh }}</span>{% endif %}
+          </div>
+          <p>{{ f.fix | autolink | safe or "—" }}</p>
+          {% if f.code_example %}
+          <details class="code-fold">
+            <summary>
+              <span class="fold-icon">▶</span>
+              <span class="fold-label">示例代码</span>
+            </summary>
+            <div class="code-example"><code>{{ f.code_example }}</code></div>
+          </details>
+          {% endif %}
+        </div>
+      </div>
+    </details>
+    {% endfor %}
+  {% else %}
+    <div class="chart-fallback"><b>无 Findings</b> — 未检测到问题，或 agent 尚未提供 scores.json</div>
+  {% endif %}
+</section>
