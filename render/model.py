@@ -1,8 +1,16 @@
-"""ReportData — 渲染前最后一个结构化对象（精简版）。"""
+"""ReportData — 渲染前最后一个结构化对象（精简版）。
+
+报告域 dataclass（TopPriority/PageRecommendation/PriorityAction/RoadmapPhase/
+ExecutiveSummary）的唯一定义在 diagnose/models.py，这里只做 import 转发，
+保持既有 `from render.model import TopPriority` 的调用不断。
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
-from typing import Optional
+
+from diagnose.models import (  # noqa: F401  (re-export)
+    TopPriority, PageRecommendation, PriorityAction, RoadmapPhase, ExecutiveSummary,
+)
 
 
 @dataclass
@@ -45,74 +53,8 @@ class ComponentScore:
     note: str = ""                     # 得分理由（agent 在 scores.json 中提供，≤120 字）
 
 
-# ── 客户报告数据模型（新增） ─────────────────────────────────
-
-@dataclass
-class TopPriority:
-    """Top 3 优先事项"""
-    index: int                      # 01, 02, 03
-    title: str
-    description: str
-    impact: str
-    effort: str
-    owner: str
-    # 中文伴生（渲染层填）
-    impact_zh: str = ""
-    effort_zh: str = ""
-    owner_zh: str = ""
-
-
-@dataclass
-class PageRecommendation:
-    """页面级优化建议"""
-    page: str                       # 页面路径或类型
-    page_type: str                  # homepage / product / category / about / blog / faq
-    issue: str                      # 问题描述
-    recommendation: str             # 具体建议
-    priority: str                   # P0/P1/P2/P3
-    impact: str                     # High/Med/Low
-    effort: str                     # minutes/hours/days/weeks
-    code_example: str = ""          # 可选的代码示例
-
-
-@dataclass
-class PriorityAction:
-    """优先级行动项"""
-    action: str
-    priority: str                   # P0/P1/P2/P3
-    impact: str                     # High/Med/Low
-    effort: str                     # minutes/hours/days/weeks
-    owner: str                     # developer/content/marketing
-    platforms: str = ""
-    page: str = ""                  # 关联页面
-    code_example: str = ""          # 可选的代码示例
-    title: str = ""                 # 短标题（≤40字），为空时模板截断 action
-
-    # 中文伴生
-    impact_zh: str = ""
-    effort_zh: str = ""
-    owner_zh: str = ""
-
-
-@dataclass
-class RoadmapPhase:
-    """Roadmap 阶段"""
-    phase: str                      # "30 天" / "60 天" / "90 天"
-    title: str
-    description: str
-    actions: list = field(default_factory=list)
-    owner: str = ""
-
-
-@dataclass
-class ExecutiveSummary:
-    """执行摘要"""
-    geo_score: int = 0
-    label: str = ""
-    label_zh: str = ""
-    overall_assessment: str = ""    # 一句话总结
-    top_priorities: list = field(default_factory=list)  # list[TopPriority]
-    recommended_next_step: str = ""
+# ── 报告域模型（TopPriority / PageRecommendation / PriorityAction /
+#    RoadmapPhase / ExecutiveSummary）已移至 diagnose/models.py 并在顶部 re-export。
 
 
 @dataclass

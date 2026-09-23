@@ -34,13 +34,19 @@ def _is_generic_h1(h1: str) -> bool:
 
 @register("coverage")
 def analyze(signals: dict) -> list:
-    """分析覆盖完备性。同 kind 的多页问题自动聚合为一条，affected_pages 列出所有页面。"""
+    """分析覆盖完备性。同 kind 的多页问题自动聚合为一条，affected_pages 列出所有页面。
+
+    页面范围：主页 + 文章页 + 产品页 + 功能页（functional_pages）。
+    coverage 是页面级卫生规则（H1/meta/canonical/og），对所有页型适用；
+    内容质量类规则（argumentation 等）不消费功能页，见各自分析器。
+    """
     raw_issues = []
     main = signals.get("main_page") or {}
 
-    # 所有页面：主页 + 文章页 + 产品页
+    # 所有页面：主页 + 文章页 + 产品页 + 功能页
     all_pages = [main] + (signals.get("article_pages") or []) + \
-                (signals.get("product_pages") or [])
+                (signals.get("product_pages") or []) + \
+                (signals.get("functional_pages") or [])
 
     for pg in all_pages:
         if not pg:
@@ -52,8 +58,21 @@ def analyze(signals: dict) -> list:
         h1_list = _v(meta.get("h1_tags")) or []
         h1 = h1_list[0] if h1_list else ""
 
-        # 规则 1：H1 通用性
-        if h1 and _is_generic_h1(h1):
+        # 规则 1a：H1 完全缺失（原 h1_too_generic 的 `if h1` 前置条件导致空 H1 被静默跳过）
+        if not h1:
+            raw_issues.append(make_issue(
+                category="coverage", kind="h1_missing", severity="Low",
+                title="页面缺 H1 标签",
+                evidence={
+                    "url": {"value": url, "location": "page"},
+                    "title": {"value": _v(meta.get("title")), "location": "<title>"},
+                },
+                impact="H1 是 AI 与搜索引擎识别页面主题的最高权重信号；缺失时只能靠 title/H2 间接推断，页面主题识别模糊。",
+                fix="为该页模板补一个语义化 H1（与 title 保持一致的栏目/页面名）。",
+                layer="template", page_url=url,
+            ))
+        # 规则 1b：H1 通用性
+        elif _is_generic_h1(h1):
             raw_issues.append(make_issue(
                 category="coverage", kind="h1_too_generic", severity="High",
                 title=f"H1 过于通用：「{h1}」",
@@ -128,6 +147,32 @@ def analyze(signals: dict) -> list:
                 layer="template", page_url=url,
             ))
 
+    # ─── 规则 6：FAQ 判定树（GEO-COV-008） ─────────────────────
+    # 只报「FAQ 页真实存在且有问答内容，但未标注 FAQPage schema」这一确定形态；
+    # 「全站无 Q&A」的建设性建议按 score.md 留给 agent 判断，脚本不越权。
+    site = signals.get("site") or {}
+    faq = (site.get("functional") or {}).get("faq")
+    if faq and faq.get("status") and faq["status"] < 400 \
+            and not faq.get("has_faq_schema") and (faq.get("word_count") or 0) >= 100:
+        elsewhere = bool(site.get("faqpage_on_content_pages"))
+        raw_issues.append(make_issue(
+            category="coverage", kind="faq_content_without_schema",
+            severity="Medium" if elsewhere else "High",
+            title=f"FAQ 页已有 {faq.get('word_count')} 词问答内容但未标注 FAQPage schema",
+            evidence={
+                "faq_page": {"value": faq.get("url"), "location": "functional page"},
+                "word_count": {"value": faq.get("word_count"), "location": "page"},
+                "faqpage_elsewhere": {"value": elsewhere,
+                                      "location": "content pages structured_data"},
+            },
+            impact=("FAQ 页是问答内容的权威宿主，但 AI 只能读到纯文本，无法提取结构化问答对；"
+                    "Google AIO / Perplexity 的问答型答案优先引用带 FAQPage 标注的页面。"
+                    + ("（产品/文章页已检出 FAQPage，定级降为 Medium——但 FAQ 页本体仍是未标注状态。"
+                       if elsewhere else "")),
+            fix="为 FAQ 页模板补 FAQPage JSON-LD：把现有问答对逐个映射为 Question/acceptedAnswer。这是「已有内容补标注」，零内容创作成本。",
+            layer="template", page_url=faq.get("url") or "",
+        ))
+
     return _aggregate_by_kind(raw_issues)
 
 
@@ -170,10 +215,14 @@ def _aggregate_by_kind(issues: list) -> list:
         base_title = first.get("title", "")
         new_title = f"{base_title}（{len(pages)} 个页面）"
 
-        # fix 前加「模板级问题」提示
+        # fix 前加「模板级问题」提示（URL 统一转相对路径展示，不硬编码任何站点域名）
         base_fix = first.get("fix", "")
+        def _rel(u):
+            from urllib.parse import urlparse
+            p = urlparse(u)
+            return (p.path or "/") if p.scheme else u
         new_fix = (f"【模板级问题】改一处即可修复全部 {len(pages)} 个页面。"
-                   f"涉及页面：{', '.join(p.replace('https://www.botslab.com','') for p in pages[:5])}"
+                   f"涉及页面：{', '.join(_rel(p) for p in pages[:5])}"
                    f"{' 等' if len(pages) > 5 else ''}。"
                    f"\n\n{base_fix}")
 

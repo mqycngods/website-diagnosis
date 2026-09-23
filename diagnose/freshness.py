@@ -9,7 +9,11 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
-TIERS = ((90, "fresh"), (365, "aging"), (730, "stale"))
+from .config import cfg
+
+_tiers_cfg = cfg("freshness.tiers", [90, 365, 730])
+TIERS = ((int(_tiers_cfg[0]), "fresh"), (int(_tiers_cfg[1]), "aging"),
+         (int(_tiers_cfg[2]), "stale"))
 
 
 def _parse_date(raw: str):

@@ -1,0 +1,36 @@
+# site-diagnosis-zh 统一配置
+# 所有数值与名单收编于此；规则逻辑留在代码。
+# 修改权重/阈值/超时不需要改代码。
+
+crawler:
+  timeout: 30            # 页面抓取默认超时（秒）
+  robots_timeout: 15     # robots.txt
+  probe_timeout: 15      # AI 爬虫 UA 重放
+  sitemap_timeout: 10    # sitemap 解析
+  sitemap_limit: 500     # sitemap 最多解析 URL 数
+  discovery_sitemap_limit: 200   # 功能页发现用的 sitemap 上限
+  sample_articles: 5     # 文章页抽样数
+  sample_products: 3     # 产品页抽样数
+  polite_delay: 1        # 逐页抓取的礼貌限速（秒）
+
+scoring:
+  # 五维权重（和为 1.0）。品牌实体维度已并入 schema 维度。
+  weights:
+    citability: 0.3125   # 内容引用度
+    content: 0.25        # 内容质量
+    technical: 0.1875    # 技术基础
+    schema: 0.125        # 品牌识别与 Schema
+    platform: 0.125      # 爬虫可达性
+
+citability:
+  # 段落可引用性五维度满分
+  dim_max:
+    answer_block_quality: 30
+    self_containment: 25
+    structural_readability: 20
+    statistical_density: 15
+    uniqueness_signals: 10
+
+freshness:
+  # 分级边界（天）：fresh < 90 · aging < 365 · stale < 730 · very-stale ≥ 730
+  tiers: [90, 365, 730]

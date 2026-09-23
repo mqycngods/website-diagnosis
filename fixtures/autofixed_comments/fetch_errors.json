@@ -1,0 +1,13 @@
+{
+  "source": "blog.edgelight.com-20260920-150707",
+  "errors": [
+    {
+      "kind": "jsonld_comments",
+      "schema_type": "WebSite",
+      "auto_fixed": true,
+      "page_url": "https://blog.edgelight.com/",
+      "msg": "WebSite JSON-LD 内嵌非法 JavaScript 注释（//），已自动清洗注释后成功解析",
+      "raw_preview": "{\n      \"@context\": \"https://schema.org\",\n      \"@graph\": [\n        // 1. 网站基础信息\n        {\n          \"@type\": \"WebSite\",\n          \"@id\": \"https://blog.edgelight.com/#website\",\n          \"name\": \"HTNXT\",\n          \"url\": \"https://blog.edgelight.com\",\n          \"description\": \"\",\n          \"keywords\""
+    }
+  ]
+}

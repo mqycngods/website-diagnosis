@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "site-diagnosis-zh"
+version = "0.2.0"
+description = "中文官网 GEO 诊断报告生成器 — 确定性采集 + agent 评分 + 多格式渲染"
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.28",
+    "beautifulsoup4>=4.11",
+    "lxml>=4.9",
+    "jinja2>=3.1",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+geo-diagnose = "report:main"
+
+[tool.setuptools]
+py-modules = ["report"]
+packages = ["diagnose", "diagnose.analyzers", "diagnose.signals",
+            "diagnose.scoring", "diagnose.recommendations",
+            "render", "scripts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

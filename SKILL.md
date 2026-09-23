@@ -3,25 +3,65 @@ name: site-diagnosis-zh
 description: 中文官网 GEO 优化报告生成器。输入一个 URL，产出一份带图表的单文件中文 HTML 客户交付报告。诊断 AI 可引用性、爬虫可达性、Schema、品牌实体、技术基础，由 agent 完成评分与中文撰写，脚本完成确定性采集、报告数据构建与渲染。适用于 Claude Code、Codex 及任意能执行 Python 与读写文件的 agent 环境。
 ---
 
-# 中文官网 GEO 优化报告（site-diagnosis-zh）
+# GEO Diagnosis Skill（site-diagnosis-zh）
 
-输入一个网址，输出一份自包含的中文 GEO 官网优化报告（单文件 HTML，内联风格与图表）。
+## Purpose
 
-## 设计要点（读前先懂）
+输入一个网址，输出一份自包含的中文 GEO 官网优化报告（单文件 HTML，内联风格与图表），以及一份可执行的 GEO 优化执行清单（Markdown）。
 
-- **脚本做确定性的事**：抓页面、解析 robots、重放爬虫 UA、给段落打分、构建报告数据、渲染 HTML。同一 URL 任何机器结果一致。
-- **agent 做判断与写作**：读采集到的 JSON，按评分卡打分、用**中文**写发现与建议。**汉化不靠翻译——评分时直接用中文写**，从源头保证准确。
+## When to use
+
+当用户要求对某个官网做 GEO / AI 搜索可见性诊断时使用：
+「诊断这个网站」「GEO 报告」「AI 可见性分析」「这个站对 ChatGPT/Perplexity 友好吗」等。
+
+## Input
+
+- **必需**：目标 URL（http/https）
+- **可选**：品牌名（不填则从域名推断）
+
+## Architecture（双脑结构，先懂再用）
+
+- **脚本做确定性的事**：抓页面、解析 robots、重放爬虫 UA、给段落打分、构建报告数据、渲染。同一 URL 任何机器结果一致。
+- **agent 做判断与写作**：读采集到的 JSON，按评分卡打分、用**中文**写发现与建议。**汉化不靠翻译——评分时直接用中文写**。
 - **执行计划由 agent 生成，不进渲染层**：`GEO_EXECUTION_PLAN.md` 是诊断后的独立交付物（Phase 2.5），由 agent 基于 `work/scores.json` 直接撰写 Markdown；**不要为它写生成器脚本**——任务合并/拆分、依赖排序、最小执行路径都是判断工作，硬编码规则套不上不同站点。
-- **Report Builder 做数据转换**：`scripts/report_builder.py` 将原始诊断数据转换为客户报告数据对象（Executive Summary、Top Priorities、Page Recommendations、Priority Actions、Roadmap）。
-- **零 API key**：不调用任何外部 LLM 接口；跑这个 skill 的 agent 就是 LLM。
+
+```
+URL
+ │  report.py collect（确定性）
+ ▼
+diagnose/ 采集层 ──► work/*.json
+ │   fetch / sampling / discovery / schema / robots / bots / citability / brand / technical
+ │   signals（纯事实提取）→ analyzers（checks 规则引擎，带 GEO-XXX-NNN 规则 ID）→ issues.json
+ │
+ │  agent 读 prompts/score.md 评分（判断层）
+ ▼
+work/scores.json
+ │
+ │  report.py render（确定性）
+ ▼
+diagnose/scoring（ScoreEngine：确定性 baseline + agent override）
+   → diagnose/recommendations（RecommendationEngine：行动/Roadmap 派生）
+   → render/（ReportData 装配 + 图表预计算 + Jinja2 渲染）
+   → HTML / Markdown / JSON
+ │
+ │  agent 直接 Write（不经渲染层）
+ ▼
+GEO_EXECUTION_PLAN.md
+```
+
+**引擎与渲染解耦**：诊断引擎（diagnose/）不产出 HTML；评分与建议先形成标准化数据
+（ScoreCard / Finding / Recommendation，见 diagnose/models.py），再由渲染层
+（HTML / Markdown / JSON）分别输出。新增输出格式（PDF/API/Dashboard）只需加 renderer。
 
 ## 依赖
 
 ```bash
-pip install -r requirements.txt   # requests, beautifulsoup4, lxml, jinja2
+pip install -r requirements.txt   # requests, beautifulsoup4, lxml, jinja2, pyyaml
 ```
 
-## 执行流程（三步）
+零 API key：不调用任何外部 LLM 接口；跑这个 skill 的 agent 就是 LLM。
+
+## Workflow
 
 ### Phase 0 — 建立本次诊断的输出目录（每次诊断必做）
 
@@ -53,32 +93,40 @@ results/
     │   ├── technical.json
     │   ├── articles.json
     │   ├── pages.json
-    │   └── scores.json
+    │   ├── signals.json
+    │   ├── issues.json
+    │   └── scores.json           # agent 产出
     ├── <domain>-geo-report.html  # Phase 3 渲染产物
     └── GEO_EXECUTION_PLAN.md     # Phase 2.5 由 agent 直接 Write
 ```
 
-历史诊断保留在各自文件夹中互不覆盖；项目根目录不再堆 `*-geo-report.html` 与 `work.bak.*`。
+历史诊断保留在各自文件夹中互不覆盖。
 
 ### Phase 1 — 确定性采集（跑脚本）
 
 ```bash
 python report.py collect <url> --out "$RUN_DIR/work/"
+# 调试重跑可加文件缓存，不重新抓站：
+# python report.py collect <url> --out "$RUN_DIR/work/" --cache-dir "$RUN_DIR/cache"
 ```
+
+同一进程内自动启用记忆缓存：fetch / citability / bots 基线 / sitemap 不重复请求同一 URL。
 
 产出 `$RUN_DIR/work/` 下的 JSON：
 
 | 文件 | 内容 |
 |---|---|
-| `fetch.json` | 页面 title/meta/标题层级/正文/structured_data/响应头 |
-| `robots.json` | robots.txt 解析 + 各 AI 爬虫声明策略 |
+| `fetch.json` | 页面 title/meta/标题层级/正文/structured_data（含 JSON-LD 四级容错修复记录）/响应头 |
+| `robots.json` | robots.txt 解析 + 各 AI 爬虫声明策略 + sitemap 可达性 |
 | `bots.json` | AI 爬虫 UA 重放实测（谁被拦/被放行/被收费） |
 | `citability.json` | 正文段落可引用性逐段评分 + 页面均分 |
-| `schema.json` | JSON-LD 清单 + sameAs 链接 |
+| `schema.json` | JSON-LD 清单（Present/Broken/Missing/NotSampled 四态）+ sameAs 链接 |
 | `brand.json` | 品牌站外实体（Wikipedia/Wikidata API 验证） |
 | `technical.json` | 安全头矩阵 + HTTPS + llms.txt |
 | `articles.json` | 抽样文章页（新鲜度与 Article/Person schema 是文章级信号） |
-| `pages.json` | 功能页发现（Support/FAQ/Contact/About/Warranty）：`found` 为真实抓到、`missing` 为未发布——agent 只诊断 `found`，对 `missing` 写建设性建议，不虚构 URL。**注意两个例外**：① FAQ —— 若 `schema.json` 显示 FAQPage 已 Present（内嵌在博客/产品页），则「缺独立 FAQ 页」不构成 GEO finding；② Contact —— 若 Organization 已配置 `contactPoint` 或首页/页脚/About 页正文有可见联系方式，则「缺独立 Contact 页」不构成 GEO finding |
+| `pages.json` | 功能页发现（Support/FAQ/Contact/About/Warranty，含 `/blogs/faq` 类非标准路径）：`found` 为真实抓到、`missing` 为未发布——agent 只诊断 `found`，对 `missing` 写建设性建议，不虚构 URL。功能页同时进入 signals/issues 管线（覆盖 H1/meta/canonical 等页面级规则）。**注意两个例外**：① FAQ —— 若 `schema.json` 显示 FAQPage 已 Present（内嵌在博客/产品页），则「缺独立 FAQ 页」不构成 GEO finding；② Contact —— 若 Organization 已配置 `contactPoint` 或首页/页脚/About 页正文有可见联系方式，则「缺独立 Contact 页」不构成 GEO finding |
+| `signals.json` | 纯事实信号（meta/author/entity/content，value+location+raw 契约） |
+| `issues.json` | checks 规则引擎产出：每条带稳定规则 ID（GEO-XXX-NNN）+ 结构化证据 |
 
 某一步失败不阻断：对应 JSON 写 `{"error": "..."}`，报告该章渲染"未测量"。
 
@@ -92,7 +140,7 @@ python report.py collect <url> --out "$RUN_DIR/work/"
    ```json
    {"articles": ["url1", "url2", "url3"], "products": ["url4", "url5"]}
    ```
-3. 执行 `python report.py fetch-sampled "$RUN_DIR/work/"`，脚本抓取这些 URL、回写 `articles.json`、用最新数据重建 `schema.json`
+3. 执行 `python report.py fetch-sampled "$RUN_DIR/work/"`，脚本抓取这些 URL、回写 `articles.json`、用最新数据重建 `schema.json` 与 `signals/issues`
 4. 继续 Phase 2
 
 数量建议：文章 3-5 篇、产品 2-3 个。避免重复采同一栏目。若 internal_links 里确实没有可识别的详情页（纯单页站），跳过本阶段，schema 的 Article/Product 行维持 NotSampled。
@@ -101,10 +149,12 @@ python report.py collect <url> --out "$RUN_DIR/work/"
 
 读取 `$RUN_DIR/work/*.json`，按 `prompts/score.md` 的评分卡，产出 `$RUN_DIR/work/scores.json`：
 
-- 六个维度各给 0–100 分：可引用性 / 品牌实体 / 内容质量 / 技术基础 / Schema / 平台就绪
+- 五个维度各给 0–100 分：内容引用度 / 内容质量 / 技术基础 / 品牌识别与 Schema / 爬虫可达性
+- 确定性 baseline 已由脚本计算（ScoreEngine）；agent 的分作为 override，重点产出的是 **note（得分理由）与 findings 的中文撰写**，以及语义维度（内容质量等）的判断
 - 每条 finding 用**中文**写：title / evidence / impact / fix / confidence
 - 给 3 条本周速赢、2 条本月改进、1 条本季战略（中文，含影响/工作量/负责人）
 - 自由文本一律中文；枚举机器值（severity/confidence/bot_class/verdict 等）**保留英文**——渲染层统一处理
+- 写 finding 前先读 `issues.json`：checks 引擎已产出的结构化问题（带 GEO-XXX-NNN 规则 ID）**不要重复诊断**，可以引用其 ID 与证据，或在其基础上补充语义判断
 
 **写完必须验证 JSON 合法（硬性门槛，不过不进 Phase 3）：**
 
@@ -265,61 +315,146 @@ status           未开始 / 进行中 / 已完成
 ### Phase 3 — 渲染
 
 ```bash
+# HTML（客户交付，默认）
 python report.py render "$RUN_DIR/work/" --domain <domain> --url <url> --output "$RUN_DIR/<domain>-geo-report.html"
+
+# 其他格式（平台接入 / 快速预览）
+python report.py render "$RUN_DIR/work/" --domain <domain> --url <url> --format json --output "$RUN_DIR/report-data.json"
+python report.py render "$RUN_DIR/work/" --domain <domain> --url <url> --format markdown --output "$RUN_DIR/summary.md"
 ```
 
-生成单文件中文 HTML：内联 CSS（暖纸风格）+ ECharts 图表（SVG，可打印）+ 内嵌原始数据 JSON。文件与 `GEO_EXECUTION_PLAN.md`、`work/` 一起归档在 `$RUN_DIR/` 内。
+HTML 报告为单文件中文：内联 CSS（暖纸风格）+ ECharts 图表（SVG，可打印）+ 内嵌原始数据 JSON。
 
-## 评分权重（六维合成 GEO 总分）
+## Diagnosis capabilities
 
-可引用性 25% · 品牌实体 20% · 内容质量 20% · 技术基础 15% · Schema 10% · 平台就绪 10%
+| 能力 | 模块 | 确定性/判断 |
+|---|---|---|
+| 页面抓取 + JSON-LD 四级容错修复 | diagnose/fetch.py | 确定性 |
+| 文章/产品页抽样 + 动态 URL 站 agent 协助 | diagnose/sampling.py + Phase 1.5 | 确定性 + agent |
+| 功能页发现（不猜路径） | diagnose/discovery.py | 确定性 |
+| Schema 四态清单 + 电商识别 | diagnose/schema_check.py | 确定性 |
+| robots.txt + sitemap 可达性 | diagnose/robots.py + diagnose/sitemap.py | 确定性 |
+| 12 个 AI 爬虫 UA 重放 + WAF 识别 | diagnose/bots.py + diagnose/crawlers.py | 确定性 |
+| 段落可引用性五维评分（中英通用） | diagnose/citability.py | 确定性 |
+| 品牌站外实体（Wikipedia/Wikidata API） | diagnose/brand.py | 确定性（其余平台 agent 复核） |
+| 安全头 + HTTPS + llms.txt | diagnose/technical.py | 确定性 |
+| 内容新鲜度分级 | diagnose/freshness.py | 确定性 |
+| 信号提取（meta/author/entity/content） | diagnose/signals/ | 确定性 |
+| checks 规则引擎（23 条规则，GEO-XXX-NNN） | diagnose/analyzers/ | 确定性 |
+| 五维评分（确定性 baseline + agent override） | diagnose/scoring/engine.py + agent | 双轨 |
+| 行动派生 / Roadmap / 执行摘要 | diagnose/recommendations/engine.py | 确定性 |
+| GEO 执行计划（任务合并/排序/验收） | agent 直写 | 判断 |
+
+## Output schema
+
+诊断的标准化数据对象（`--format json` 可得，模型定义在 diagnose/models.py + render/model.py）：
+
+```json
+{
+  "geo_score": 43,
+  "label": "Poor",
+  "label_zh": "偏弱",
+  "components": [{"key": "citability", "name": "内容引用度", "score": 39, "weight": 0.3125, "measured": true, "note": "..."}],
+  "findings": [{"title": "...", "evidence": "...", "impact": "...", "fix": "...",
+                "severity": "Critical", "confidence": "Confirmed", "layer": "domain"}],
+  "quick_wins": [], "medium_term": [], "strategic": [],
+  "executive_summary": {"top_priorities": [], "recommended_next_step": "..."},
+  "page_recommendations": [], "priority_actions": [], "roadmap": [],
+  "citability": {}, "bots": {}, "robots": {}, "schema": {}, "fetch": {}, "technical": {}
+}
+```
+
+checks 规则引擎产出（work/issues.json）每条带：
+
+```json
+{"id": "GEO-ENT-002", "category": "entity_graph", "kind": "organization_no_sameas",
+ "severity": "Critical", "confidence": "Confirmed", "layer": "domain",
+ "title": "...", "evidence": {"signal": {"value": "...", "location": "..."}},
+ "impact": "...", "fix": "...", "page_url": "..."}
+```
+
+## Error handling
+
+- **单步失败不阻断**：collect 某一步失败，对应 JSON 写 `{"error": "..."}`，报告该章渲染「未测量」，不产假数据。
+- **单页失败不中断**：抽样页/功能页抓取失败只记录该页 error，其余页面继续。
+- **JSON-LD 损坏不丢**：四级修复全部失败时写入 `__parse_error` 占位，schema 清单标 Broken（比 Missing 更严重）。
+- **scores.json 非法 JSON**：渲染层静默降级会丢失 agent 全部产出——所以 Phase 2 的 `json.tool` 验证是硬性门槛；渲染时对非法 JSON 会打印警告到 stderr。
+
+## Extension
+
+- **新增检查规则**：在 `diagnose/analyzers/` 对应模块写 `make_issue(...)`，并在 `diagnose/analyzers/__init__.py` 的 `RULES` 表登记 `(category, kind) → {id, weight, name}`；新分析方向则新建 `analyze_*` 函数 + `@register`。
+- **调整权重/阈值/超时**：改 `config/default.yaml`（crawler/scoring/citability/freshness），不改代码。
+- **新增输出格式**：在 `render/` 加一个 renderer（输入 ReportData），在 report.py 的 `--format` 注册。
+- **新增 AI 爬虫**：在 `diagnose/crawlers.py` 的 `AI_CRAWLERS` 加 UA 与分类。
+- **回归保护**：`python3 -m pytest tests/`；真实案例 fixtures 在 `fixtures/`（broken JSON-LD / 自动修复案例）。
+
+## Examples
+
+```bash
+# 完整诊断一个站点
+RUN_DIR="results/example.com-$(date +%Y%m%d-%H%M%S)"; mkdir -p "$RUN_DIR/work"
+python report.py collect https://example.com --out "$RUN_DIR/work/"
+# → agent 读 work/*.json，按 prompts/score.md 写 work/scores.json（验证 JSON 合法）
+# → agent 直写 $RUN_DIR/GEO_EXECUTION_PLAN.md
+python report.py render "$RUN_DIR/work/" --domain example.com --url https://example.com --output "$RUN_DIR/example.com-geo-report.html"
+```
+
+## 评分权重（五维合成 GEO 总分）
+
+内容引用度 31.25% · 内容质量 25% · 技术基础 18.75% · 品牌识别与 Schema 12.5% · 爬虫可达性 12.5%
+
+（数值在 `config/default.yaml` 的 `scoring.weights`，可调。）
 
 ## 报告结构（客户交付版）
 
-报告按「总览 → 诊断 → 行动 → 证据」的决策路径组织，分为 3 个 Group + 附录。Group 是信息层级——同一 Group 内的子章节共享同一个阅读目标。
+报告按「总览 → 诊断 → 行动 → 证据」的决策路径组织，分为 3 个 Group + 附录。
 
 ```
 Cover
 │
 ├── GROUP 01 — 执行总览（Executive Overview）
-│   │   回答「这个网站目前 GEO 表现怎么样？」 · LEVEL 1 · 决策层
 │   ├── 执行摘要（核心判断 / 一句话结论）
 │   └── GEO 就绪度评分（综合仪表盘 + 五维雷达）
 │
 ├── GROUP 02 — 诊断分析（GEO Diagnosis）
-│   │   回答「为什么是这个结果？」 · LEVEL 3 · 证据层
 │   ├── AI 可发现性（爬虫实测 / robots.txt / crawlability）
 │   ├── 技术基础与新鲜度（HTTPS / 安全头 / llms.txt / 时效性）
 │   ├── 实体与结构化数据（Organization / WebSite / Product / sameAs）
 │   └── 内容与可引用性（citability / answerability / 内容质量）
 │
 ├── GROUP 03 — 行动方案（Action Plan）
-│   │   回答「怎么做？」 · LEVEL 2 · 决策与执行一体
-│   │   每个 Issue 只写一次正文，按优先级 / 页面 / 时间三种维度组织。
 │   ├── 主视图：按优先级分桶（P0 立即 / P1 高优 / P2 优化 / P3 长期）
-│   │   每张行动卡片含 #01 锚点 + 为什么重要 / 证据 / 建议动作 / 代码示例
-│   ├── 折叠视图：按页面查看（首页 / 产品页 / 关于 … 只列编号）
-│   └── 折叠视图：按时间查看（30/60/90 天 … 只列编号）
+│   ├── 折叠视图：按页面查看
+│   └── 折叠视图：按时间查看（30/60/90 天）
 │
-└── APPENDIX — 附录
-        技术证据 · 详细数据 · 方法论 · LEVEL 3 · 证据
-    └── 全部 Findings（含证据、影响、置信度、所在层）
+└── APPENDIX — 附录（全部 Findings：证据、影响、置信度、所在层）
 ```
 
-**信息降级原则**：LEVEL 1（执行信息）> LEVEL 2（行动方案）> LEVEL 3（技术证据）。
-**去重原则**：每个 finding 在 `report_builder.py` 派生时只产出一条 `priority_action`（带 `finding_index`），page_recommendations 与 roadmap 通过 `finding_index` 引用，不再复制正文——同一份内容全文只写一次。
+**去重原则**：每个 finding 只派生一条 priority_action（带 finding_index），page_recommendations 与 roadmap 通过 finding_index 引用，不复制正文。
 
 ## 目录
 
 ```
-diagnose/        确定性采集脚本
-render/          ReportData 组装 + 图表预计算 + Jinja2 渲染
-scripts/         report_builder.py（客户报告数据构建）
+diagnose/        诊断引擎（不产出 HTML）
+  ├── fetch/robots/bots/citability/schema_check/brand/technical/freshness/discovery/sampling/sitemap
+  ├── signals/     纯事实信号提取（value/location/raw 契约）
+  ├── analyzers/   checks 规则引擎（@register + RULES 表，GEO-XXX-NNN 规则 ID）
+  ├── scoring/     ScoreEngine（确定性 baseline + agent override）
+  ├── recommendations/  RecommendationEngine（行动/优先级/Roadmap 派生）
+  ├── models.py    统一数据模型（Evidence/Issue/Finding/Recommendation/ScoreCard/报告域）
+  ├── migrations.py 旧版采集数据格式迁移
+  ├── config.py    统一配置加载
+  ├── cache.py     HTTP 缓存（memory + filesystem）
+  └── context.py   SiteContext 跨页派生
+render/          ReportData 装配 + 图表预计算 + Jinja2/Markdown/JSON 渲染
+scripts/         report_builder.py（兼容薄壳，实现在 diagnose/recommendations/）
 templates/       中文报告模板（Jinja2）
 prompts/         给 agent 的评分卡与汉化契约
-report.py        唯一 CLI 入口（collect / render 两个子命令）
-results/         每次诊断一个独立子文件夹（<domain>-<yyyymmdd-HHMMSS>/），
-                 内含 work/（所有 JSON）、HTML 报告、GEO_EXECUTION_PLAN.md
+config/          default.yaml（权重/阈值/超时）
+tests/           pytest 回归测试
+fixtures/        真实案例 fixtures（broken JSON-LD 等）
+report.py        唯一 CLI 入口（collect / fetch-sampled / render）；安装后可用 geo-diagnose
+results/         每次诊断一个独立子文件夹
 ```
 
 ## 图表选择逻辑

@@ -19,15 +19,8 @@ from .model import (
     Action, ComponentScore, Finding, ReportData,
     TopPriority, PageRecommendation, PriorityAction, RoadmapPhase, ExecutiveSummary,
 )
-
-# 五维权重与中文名（品牌实体维度已移除；其余维度按原比例归一化，和为 1.0）
-WEIGHTS = {
-    "citability": ("内容引用度", 0.3125),
-    "content": ("内容质量", 0.25),
-    "technical": ("技术基础", 0.1875),
-    "schema": ("品牌识别与 Schema", 0.125),
-    "platform": ("爬虫可达性", 0.125),
-}
+from diagnose.migrations import normalize_schema as _normalize_schema
+from diagnose.scoring.engine import ScoreEngine, score_label as _score_label, compute_baselines
 
 # 封闭词表 → 中文（固定集合，唯一保留的小映射；自由文本不在这里）
 ZH_LABEL = {"Excellent": "优秀", "Good": "良好", "Fair": "中等", "Poor": "偏弱", "Critical": "堪忧"}
@@ -64,83 +57,7 @@ def _ok(payload) -> bool:
     return isinstance(payload, dict) and "error" not in payload and bool(payload)
 
 
-def _score_label(score: int) -> str:
-    return ("Excellent" if score >= 90 else "Good" if score >= 75 else
-            "Fair" if score >= 60 else "Poor" if score >= 40 else "Critical")
-
-
-def _schema_score(schema: dict) -> int:
-    """schema.json → 0-100 回退分：关键类型覆盖 + sameAs 完整性。"""
-    if not schema:
-        return 0
-    inv = schema.get("inventory", [])
-    critical = [i for i in inv if i.get("impact") == "Critical"]
-    crit_present = sum(1 for i in critical if i.get("status") == "Present")
-    base = round((crit_present / len(critical)) * 60) if critical else 0
-    # sameAs：0 条=0，1-2 条=20，3-4 条=30，5+=40
-    n = schema.get("sameas_count", 0)
-    sameas = 40 if n >= 5 else 30 if n >= 3 else 20 if n >= 1 else 0
-    return min(100, base + sameas)
-
-
 _ARTICLE_FAMILY = ("Article", "NewsArticle", "BlogPosting")
-
-
-def _normalize_schema(schema: dict, fetch: dict) -> dict:
-    """旧版 schema.json（BlogPosting/NewsArticle 独立行、Product 标 Missing）→ 三态新格式。
-
-    归并 Article 家族；Product/Service 在未采产品页时由 Missing 改标 NotSampled；
-    补 sampled 结构与电商识别。新版 collect 已产出新格式时直接透传。
-    """
-    if not _ok(schema):
-        return schema
-    inv = schema.get("inventory") or []
-    names = {i.get("schema_type") for i in inv}
-    already = any("含" in (n or "") for n in names) or \
-        any(i.get("status") == "NotSampled" for i in inv)
-    if already:
-        schema.setdefault("sampled", {
-            "homepage": 1,
-            "article_pages": max(0, (schema.get("sampled_pages") or 1) - 1),
-            "product_pages": 0,
-        })
-        return schema
-
-    present_types = {i.get("schema_type") for i in inv if i.get("status") == "Present"}
-    article_covered = bool(present_types & set(_ARTICLE_FAMILY))
-    product_pages = 0  # 旧数据 collect 时未抓产品页
-
-    out = []
-    seen_article = False
-    for i in inv:
-        t = i.get("schema_type")
-        if t in _ARTICLE_FAMILY:
-            if seen_article:
-                continue  # 家族成员只保留一行
-            seen_article = True
-            out.append({**i, "schema_type": "Article（含 NewsArticle/BlogPosting）",
-                        "status": "Present" if article_covered else "Missing"})
-        elif t in ("Product", "Service") and i.get("status") == "Missing" and product_pages == 0:
-            out.append({**i, "status": "NotSampled"})
-        else:
-            out.append(i)
-
-    # 电商识别（内链路径特征），命中则 Product 影响升级
-    from diagnose.schema_check import detect_ecommerce
-    is_ecom = detect_ecommerce(fetch.get("internal_links", []) if _ok(fetch) else [])
-    if is_ecom:
-        for i in out:
-            if i.get("schema_type") == "Product" and i.get("impact") == "Medium":
-                i["impact"] = "High"
-
-    schema["inventory"] = out
-    schema["is_ecommerce"] = is_ecom
-    schema["sampled"] = {
-        "homepage": 1,
-        "article_pages": max(0, (schema.get("sampled_pages") or 1) - 1),
-        "product_pages": 0,
-    }
-    return schema
 
 
 def _format_analyzer_evidence(it: dict) -> str:
@@ -202,23 +119,21 @@ def _format_analyzer_evidence(it: dict) -> str:
         return (f"正文共 {words} 词，出现了 {len(terms)} 处绝对化表述（如 {', '.join(terms[:4])}）；"
                 "在没有提供第三方测试数据与明确对比维度的情况下，绝对化断言容易被大模型归类为营销宣发话术，从而降低可信度。")
 
-    # 9. 权威外链分析
+    # 9. 权威外链分析（通用：列实际检测到的引用域名，不预设行业媒体名单）
     if "authority_external_links" in kind:
         count = (ev.get("authority_links_count") or {}).get("value", 0)
         words = (ev.get("word_count") or {}).get("value", 0)
         auth_links = (ev.get("authority_links") or {}).get("value", [])
 
-        # 格式化所有检测到的媒体外链列表
-        link_items = []
+        domains = []
         for l in auth_links:
-            if "techradar.com" in l: link_items.append(f"TechRadar 报道（{l}）")
-            elif "pcworld.com" in l: link_items.append(f"PCWorld 报道（{l}）")
-            elif "trustedreviews.com" in l: link_items.append(f"Trusted Reviews 报道（{l}）")
-            else: link_items.append(f"权威评测（{l}）")
-
-        links_desc = "、".join(link_items) if link_items else "若干权威媒体报道"
-        return (f"正文共 {words} 词，已包含 {count} 条指向顶级独立权威媒体的外链：{links_desc}。"
-                "虽然覆盖了 3 家知名科技评测，但在首页并未提炼展示核心评测结论与推荐语，且缺少 Consumer Reports 等中立消费者机构的背书引用。")
+            host = re.sub(r"^www\.", "", (l or "").split("//")[-1].split("/")[0])
+            if host and host not in domains:
+                domains.append(host)
+        links_desc = "、".join(f"{d}（{l}）" for d, l in
+                               zip(domains, auth_links)[:5]) if domains else "若干第三方来源"
+        return (f"正文共 {words} 词，检测到 {count} 条指向独立第三方来源的外链：{links_desc}。"
+                "外链数量与锚文本质量是否充分，需结合本站所属行业由评分 agent 进一步研判。")
 
     # 兜底：通用自然语言
     title = it.get("title", "")
@@ -311,49 +226,18 @@ def build_report(work_dir: Path, domain: str, url: str,
                             weakest = min(ratios.items(), key=lambda x: x[1])[0]
                             b["agent_hint"] = DIMENSION_HINTS.get(weakest, "补充具体数字与事实，提高段落自包含性。")
 
-    # 新鲜度是文章级信号：首页无日期时，用最新鲜的抽样文章页代替，并标明来源
-    if _ok(fetch) and isinstance(fetch.get("freshness"), dict) \
-            and fetch["freshness"].get("tier") == "unknown":
-        best = None
-        for ap in (articles.get("pages", []) if _ok(articles) else []):
-            af = ap.get("freshness") or {}
-            if af.get("age_days") is not None and (best is None or af["age_days"] < best[0]["age_days"]):
-                best = (af, ap.get("url"))
-        if best:
-            merged = dict(best[0])
-            merged["sampled_from"] = best[1]
-            merged["homepage_tier"] = "unknown"
-            fetch["freshness"] = merged
+    # 新鲜度是文章级信号：首页无日期时，用最新鲜的抽样文章页代替（派生逻辑在 diagnose/context.py）
+    from diagnose.context import derive_site_freshness
+    fetch = derive_site_freshness(fetch, articles)
 
-    # 六维得分：优先用 agent scores.json，缺失维度回退到脚本确定性分
-    dims = scores.get("dimensions", {}) if _ok(scores) else {}
-    def dim_score(key, fallback):
-        """返回 (score, measured, note)。"""
-        d = dims.get(key)
-        if isinstance(d, dict) and d.get("score") is not None:
-            return int(d["score"]), True, (d.get("note") or "")
-        return (int(fallback) if fallback is not None else 0), (fallback is not None), ""
-
-    cit_fb = citability.get("average_citability_score") if _ok(citability) else None
-    bot_fb = bots.get("overall_score") if _ok(bots) else None
-    tech_fb = technical.get("security_score") if _ok(technical) else None
-    schema_fb = _schema_score(schema) if _ok(schema) else None
-
-    comp = []
-    fallback_map = {
-        "citability": cit_fb,
-        "content": cit_fb,        # 内容质量以可引用性为代理回退
-        "technical": tech_fb,
-        "schema": schema_fb,
-        "platform": bot_fb,       # 平台就绪以爬虫实测为代理回退
-    }
-    for key, (name, weight) in WEIGHTS.items():
-        sc, measured, note = dim_score(key, fallback_map.get(key))
-        comp.append(ComponentScore(key=key, name=name, score=sc, weight=weight, measured=measured, note=note))
-
-    measured = [c for c in comp if c.measured]
-    tw = sum(c.weight for c in measured) or 1.0
-    geo = round(sum(c.score * c.weight for c in measured) / tw) if measured else 0
+    # 六维得分：ScoreEngine 统一处理（agent override 优先，确定性 baseline 兜底）
+    baselines = compute_baselines(
+        citability=citability, bots=bots, technical=technical, schema=schema)
+    engine = ScoreEngine()
+    cards = engine.score(baselines, agent_scores=scores if _ok(scores) else None)
+    comp = [ComponentScore(key=c.key, name=c.name, score=c.score, weight=c.weight,
+                           measured=c.measured, note=c.note) for c in cards]
+    geo = engine.geo_score(cards)
     label = _score_label(geo)
 
     # findings：来自 agent scores.json（中文） + 分析器产出的 issues（新）
@@ -463,10 +347,9 @@ def build_report(work_dir: Path, domain: str, url: str,
         "strategic": [asdict(a) for a in strat],
     }
 
-    # 调用 report_builder 生成客户报告数据
+    # 调用 RecommendationEngine 生成客户报告数据
     try:
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-        from scripts.report_builder import build_client_report_data
+        from diagnose.recommendations.engine import build_client_report_data
         client_data = build_client_report_data(
             domain=domain,
             url=url,

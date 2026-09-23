@@ -285,6 +285,7 @@ b. 对应的 finding `severity ∈ {Critical, High}`；Medium 级仅当 quick_wi
     - `FAQPage: Present`（无论内嵌在博客/产品页还是独立页）→ AI 已可提取问答对，「缺独立 FAQ 页」**不构成 GEO finding**，不评分、不写。
     - `FAQPage: Missing` 且 `pages.json.missing` 含 `faq` → 可写 Medium 级建设性 finding，建议增设 FAQ 内容（独立页或内嵌模块均可）。
     - `FAQPage: Missing` 但博客/产品页正文明显有 Q&A 模块（仅缺 schema）→ 应写「为现有 Q&A 内容补 FAQPage schema」，而非「新建独立 FAQ 页」。
+    - `pages.json.found.faq` 存在但 `issues.json` 报 GEO-COV-008（FAQ 页有内容无 FAQPage schema）→ 直接引用该规则证据，finding 是「补标注」而非「建页面」。注意：FAQ 页可能位于 `/blogs/faq` 等非标准路径（Shopify 常见），discovery 已能识别，不要再自行拼 `/pages/faq` 猜测。
 
 ### Contact 页诊断规则（防误报）
 

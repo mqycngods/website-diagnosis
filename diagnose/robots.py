@@ -1,50 +1,11 @@
 """解析 robots.txt 的 AI 爬虫声明策略 + sitemap 可达性。"""
 from __future__ import annotations
 
-import re
-import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
 
 from .crawlers import AI_CRAWLERS
 from .http_utils import get
-
-
-def _parse_sitemap_urls(url: str, timeout: int = 10, limit: int = 500) -> list:
-    """解析 sitemap URL 列表（含 sitemap index），返回 [{"url", "lastmod"}...]。"""
-    out, seen = [], set()
-
-    def _parse(sm_url: str, depth: int = 0):
-        if depth > 2 or sm_url in seen or len(out) >= limit:
-            return
-        seen.add(sm_url)
-        try:
-            r = get(sm_url, timeout=timeout)
-            if r.status_code != 200:
-                return
-            root_el = ET.fromstring(r.content)
-            tag = root_el.tag.lower()
-            ns = tag[: tag.index("}") + 1] if tag.startswith("{") else ""
-            if "sitemapindex" in tag:
-                for sm in root_el.findall(f"{ns}sitemap"):
-                    loc = sm.find(f"{ns}loc")
-                    if loc is not None and loc.text:
-                        _parse(loc.text.strip(), depth + 1)
-            else:
-                for u in root_el.findall(f"{ns}url"):
-                    loc = u.find(f"{ns}loc")
-                    if loc is not None and loc.text:
-                        lastmod_el = u.find(f"{ns}lastmod")
-                        out.append({
-                            "url": loc.text.strip(),
-                            "lastmod": (lastmod_el.text.strip() if lastmod_el is not None and lastmod_el.text else None),
-                        })
-                        if len(out) >= limit:
-                            return
-        except Exception:
-            return
-
-    _parse(url)
-    return out
+from .sitemap import parse_sitemap_urls as _parse_sitemap_urls
 
 
 def _analyze_sitemap(base_url: str, robots_sitemaps: list, timeout: int = 10) -> dict:

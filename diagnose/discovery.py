@@ -9,10 +9,9 @@ agent 就硬编码拼 `域名+/support`——撞上 404 再换 `/pages/support` 
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
 
-from .http_utils import get
+from .sitemap import discover_sitemaps
 
 # 功能页类型 → 命中的关键词（小写匹配 path 与锚文本；含中英文）。
 # 只匹配"站点功能/信任"页，不碰产品/文章/集合页（那些由 sampling 管）。
@@ -38,16 +37,29 @@ def _norm_path(url: str) -> str:
 
 
 def _classify(url: str, anchor_text: str) -> str | None:
-    """返回命中的功能页类型；非功能页返回 None。"""
+    """返回命中的功能页类型；非功能页返回 None。
+
+    判定顺序：功能关键词优先于 _SKIP_PATH。
+    Shopify 站常把 FAQ 寄生在 /blogs/faq 这类路径——若 skip 先执行，
+    这类真实功能页会被 /blogs/ 规则误杀（实测案例：botslab.com）。
+    路径匹配按「段」精确或前缀（faq / about-botslab），锚文本走子串（覆盖中文关键词）。
+    """
     path = _norm_path(url)
     if not path or path == "/":
         return None
-    if path.endswith(_SKIP_EXT) or _SKIP_PATH.search(path + "/"):
+    if path.endswith(_SKIP_EXT):
         return None
-    hay = path + " " + (anchor_text or "").lower()
+    segments = [s for s in path.split("/") if s]
+    anchor = (anchor_text or "").lower()
     for ptype, keywords in PAGE_TYPE_KEYWORDS.items():
-        if any(k in hay for k in keywords):
-            return ptype
+        for k in keywords:
+            if k in anchor:
+                return ptype
+            if any(seg == k or seg.startswith(k + "-") or seg.startswith(k + "_")
+                   for seg in segments):
+                return ptype
+    if _SKIP_PATH.search(path + "/"):
+        return None
     return None
 
 
@@ -77,45 +89,11 @@ def discover_functional_pages(internal_links, sitemap_urls=None,
 
 
 def fetch_sitemap_urls(base_url: str, timeout: int = 10, limit: int = 200) -> list:
-    """尽力解析 sitemap.xml（含 sitemap index），返回 URL 列表。失败返回 []。"""
-    parsed = urlparse(base_url)
-    root = f"{parsed.scheme}://{parsed.netloc}"
-    out, seen_sitemaps = [], set()
+    """尽力解析 sitemap.xml（含 sitemap index），返回 URL 列表。失败返回 []。
 
-    def parse_sitemap(sm_url: str, depth: int = 0):
-        if depth > 2 or sm_url in seen_sitemaps or len(out) >= limit:
-            return
-        seen_sitemaps.add(sm_url)
-        try:
-            r = get(sm_url, timeout=timeout)
-            if r.status_code != 200:
-                return
-            # 去掉命名空间，兼容 sitemap / sitemapindex
-            root_el = ET.fromstring(r.content)
-            tag = root_el.tag.lower()
-            ns = ""
-            if tag.startswith("{"):
-                ns = tag[: tag.index("}") + 1]
-            if "sitemapindex" in tag:
-                for sm in root_el.findall(f"{ns}sitemap"):
-                    loc = sm.find(f"{ns}loc")
-                    if loc is not None and loc.text:
-                        parse_sitemap(loc.text.strip(), depth + 1)
-            else:
-                for u in root_el.findall(f"{ns}url"):
-                    loc = u.find(f"{ns}loc")
-                    if loc is not None and loc.text:
-                        out.append(loc.text.strip())
-                        if len(out) >= limit:
-                            return
-        except Exception:
-            return
-
-    for path in ("/sitemap.xml", "/sitemap_index.xml", "/sitemapindex.xml"):
-        parse_sitemap(root + path)
-        if out:
-            break
-    return out
+    实现已合并到 diagnose/sitemap.py（原与 robots.py 双份解析逻辑合一）。
+    """
+    return discover_sitemaps(base_url, timeout=timeout, limit=limit)
 
 
 def audit_functional_pages(url: str, internal_links, fetch_one,

@@ -26,13 +26,15 @@ report.py collect  ──► diagnose/  ──► work/*.json   （确定性，�
                                             │
 agent 读 score.md ──► work/scores.json        （agent 即 LLM，中文原生撰写）
                                             │
-report.py render   ──► render/    ──► 中文 HTML   （Jinja2 + ECharts SVG）
+report.py render   ──► render/    ──► 中文 HTML / Markdown / JSON
 ```
 
-- **diagnose/**：fetch / robots / bots / citability / schema 五个确定性采集脚本
-- **render/**：ReportData 组装 + 图表预计算 + Jinja2 渲染
+- **diagnose/**：诊断引擎（不产出 HTML）——fetch / robots / bots / citability / schema_check 采集，signals/ 纯事实信号，analyzers/ checks 规则引擎（GEO-XXX-NNN 规则 ID），scoring/ 确定性 baseline + agent override，recommendations/ 行动与 Roadmap 派生，models.py 统一数据模型，cache.py HTTP 缓存，config.py 统一配置
+- **render/**：ReportData 组装 + 图表预计算 + Jinja2 / Markdown / JSON 渲染
 - **templates/**：中文报告模板（暖纸风格，edgelight 式排版）
 - **prompts/**：给 agent 的评分卡（score.md）与汉化契约（translate_zh.md）
+- **config/**：default.yaml（权重/阈值/超时集中管理）
+- **tests/ + fixtures/**：pytest 回归测试与真实案例 fixtures
 
 ## 关键设计
 
@@ -43,4 +45,10 @@ report.py render   ──► render/    ──► 中文 HTML   （Jinja2 + ECha
 
 ## 依赖
 
-requests · beautifulsoup4 · lxml · jinja2（ECharts 走 CDN，可选 --offline 内联）
+requests · beautifulsoup4 · lxml · jinja2 · pyyaml（ECharts 走 CDN，可选 --offline 内联）
+
+## 测试
+
+```bash
+python3 -m pytest tests/   # 23 个回归测试（JSON-LD 修复 / schema 四态 / 评分 / 渲染冒烟）
+```

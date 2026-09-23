@@ -1,0 +1,14 @@
+{
+  "source": "blog.edgelight.com-20260920-144251",
+  "errors": [
+    {
+      "kind": "invalid_jsonld",
+      "schema_type": "WebSite",
+      "auto_fixed": false,
+      "page_url": "https://blog.edgelight.com/blog-list",
+      "error": "Expecting value: line 4 column 9 (char 68)",
+      "raw_preview": "{\n      \"@context\": \"https://schema.org\",\n      \"@graph\": [\n        // 1. 网站基础信息\n        {\n          \"@type\": \"WebSite\",\n          \"@id\": \"https://blog.edgelight.com/#website\",\n          \"name\": \"HTNXT\",\n          \"url\": \"https://blog.edgelight.com\",\n          \"description\": \"\",\n          \"keywords\": \"\",\n          \"potentialAction\": {\n            \"@type\": \"SearchAction\",\n            \"target\": {\n  ",
+      "raw_length": 4301
+    }
+  ]
+}

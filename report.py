@@ -63,6 +63,8 @@ def _build_schema(page: dict, articles: dict) -> dict:
 
 def _fetch_urls_into(articles: dict, article_urls: list, product_urls: list):
     """逐页抓取并填入 articles dict；失败页写 error 不中断。"""
+    from diagnose.config import cfg
+    delay = float(cfg("crawler.polite_delay", 1))
     articles["sampled"] = article_urls
     articles["sampled_products"] = product_urls
     for u in article_urls:
@@ -72,7 +74,7 @@ def _fetch_urls_into(articles: dict, article_urls: list, product_urls: list):
             err = _err(f"抓取失败：{e}")
             err["url"] = u
             articles["pages"].append(err)
-        time.sleep(1)  # 礼貌限速
+        time.sleep(delay)  # 礼貌限速
     for u in product_urls:
         try:
             articles["product_pages"].append(fetch_mod.fetch_page(u))
@@ -80,17 +82,18 @@ def _fetch_urls_into(articles: dict, article_urls: list, product_urls: list):
             err = _err(f"抓取失败：{e}")
             err["url"] = u
             articles["product_pages"].append(err)
-        time.sleep(1)
+        time.sleep(delay)
 
 
-def _build_analysis(page: dict, articles: dict) -> tuple:
-    """对主页 + 文章页 + 产品页跑信号采集与全部分析器。
+def _build_analysis(page: dict, articles: dict, pages_audit: dict = None) -> tuple:
+    """对主页 + 文章页 + 产品页 + 功能页跑信号采集与全部分析器。
 
     返回 (signals, issues_by_analyzer)。失败容错，不阻断主流程。
     """
     try:
         from diagnose.signals import gatherer
-        signals = gatherer.gather_all(page, articles)
+        found_pages = (pages_audit or {}).get("found", {}) if isinstance(pages_audit, dict) else {}
+        signals = gatherer.gather_all(page, articles, functional_pages=found_pages)
     except Exception as e:
         signals = {"error": f"signals 采集失败：{e}"}
 
@@ -103,9 +106,15 @@ def _build_analysis(page: dict, articles: dict) -> tuple:
     return signals, issues
 
 
-def cmd_collect(url: str, out_dir: Path):
+def cmd_collect(url: str, out_dir: Path, cache_dir: Path = None):
     print(f"[collect] {url} -> {out_dir}")
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # 装配 HTTP 缓存：默认进程内记忆缓存（fetch/bots 基线/citability/sitemap 不重复请求）；
+    # --cache-dir 开启文件系统缓存（调试重跑不重新抓站）。
+    from diagnose import http_utils
+    from diagnose.cache import FileCache, MemoryCache
+    http_utils.set_cache(FileCache(cache_dir) if cache_dir else MemoryCache())
 
     # 1. fetch（后续 schema 复用其 structured_data）
     try:
@@ -119,9 +128,10 @@ def cmd_collect(url: str, out_dir: Path):
     #     用 `report.py fetch-sampled` 补齐（见 SKILL.md Phase 1.5）。
     try:
         from diagnose import sampling
+        from diagnose.config import cfg
         links = page.get("internal_links", []) if "error" not in page else []
-        article_urls = sampling.pick_article_urls(links)
-        product_urls = sampling.pick_product_urls(links)
+        article_urls = sampling.pick_article_urls(links, limit=cfg("crawler.sample_articles", 5))
+        product_urls = sampling.pick_product_urls(links, limit=cfg("crawler.sample_products", 3))
         articles = {"sampled": article_urls, "sampled_products": product_urls, "pages": [],
                     "product_pages": []}
         if not article_urls and not product_urls:
@@ -190,9 +200,9 @@ def cmd_collect(url: str, out_dir: Path):
         tech = _err(f"技术层检测失败：{e}")
     _write(out_dir, "technical.json", tech)
 
-    # 8. signals + analyzers（通用分析框架）
+    # 8. signals + analyzers（通用分析框架，功能页自 pages_audit 进入管线）
     try:
-        signals, issues = _build_analysis(page, articles)
+        signals, issues = _build_analysis(page, articles, pages_audit)
         _write(out_dir, "signals.json", signals)
         _write(out_dir, "issues.json", issues)
     except Exception as e:
@@ -202,13 +212,23 @@ def cmd_collect(url: str, out_dir: Path):
     print("[collect] 完成")
 
 
-def cmd_render(work_dir: Path, domain: str, url: str, output: Path):
+def cmd_render(work_dir: Path, domain: str, url: str, output: Path, fmt: str = "html"):
     from render.build import build_report
-    from render.html import render_html
 
     report = build_report(work_dir, domain=domain, url=url)
-    out = render_html(report, output)
-    print(f"[render] 报告已生成：{out}")
+    if fmt == "json":
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(report.to_dict(), ensure_ascii=False,
+                                     indent=2, default=str), encoding="utf-8")
+        print(f"[render] JSON 已生成：{output}")
+    elif fmt == "markdown":
+        from render.markdown import render_markdown
+        render_markdown(report, output)
+        print(f"[render] Markdown 已生成：{output}")
+    else:
+        from render.html import render_html
+        out = render_html(report, output)
+        print(f"[render] 报告已生成：{out}")
 
 
 def cmd_fetch_sampled(work_dir: Path):
@@ -246,9 +266,12 @@ def cmd_fetch_sampled(work_dir: Path):
         schema = _err(f"schema 重建失败：{e}")
     _write(work_dir, "schema.json", schema)
 
-    # 补抓完后重建 signals + issues
+    # 补抓完后重建 signals + issues（功能页数据若已采集则一并进入）
     try:
-        signals, issues = _build_analysis(page, articles)
+        pages_file = work_dir / "pages.json"
+        pages_audit = (json.loads(pages_file.read_text(encoding="utf-8"))
+                       if pages_file.exists() else None)
+        signals, issues = _build_analysis(page, articles, pages_audit)
         _write(work_dir, "signals.json", signals)
         _write(work_dir, "issues.json", issues)
     except Exception as e:
@@ -263,23 +286,28 @@ def main() -> int:
     c = sub.add_parser("collect", help="确定性采集")
     c.add_argument("url")
     c.add_argument("--out", required=True)
+    c.add_argument("--cache-dir", default=None,
+                   help="可选文件系统缓存目录（调试用：重跑不重新抓站）")
 
     f = sub.add_parser("fetch-sampled", help="读取 agent_picks.json 补抓页面并重建 schema")
     f.add_argument("work_dir")
 
-    r = sub.add_parser("render", help="渲染中文 HTML")
+    r = sub.add_parser("render", help="渲染报告（HTML / Markdown / JSON）")
     r.add_argument("work_dir")
     r.add_argument("--domain", required=True)
     r.add_argument("--url", required=True)
     r.add_argument("--output", required=True)
+    r.add_argument("--format", choices=["html", "markdown", "json"], default="html")
 
     args = ap.parse_args()
     if args.cmd == "collect":
-        cmd_collect(args.url, Path(args.out))
+        cmd_collect(args.url, Path(args.out),
+                    cache_dir=Path(args.cache_dir) if args.cache_dir else None)
     elif args.cmd == "fetch-sampled":
         cmd_fetch_sampled(Path(args.work_dir))
     elif args.cmd == "render":
-        cmd_render(Path(args.work_dir), args.domain, args.url, Path(args.output))
+        cmd_render(Path(args.work_dir), args.domain, args.url, Path(args.output),
+                   fmt=args.format)
     return 0
 
 

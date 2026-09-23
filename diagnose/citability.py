@@ -9,11 +9,12 @@ import re
 
 from bs4 import BeautifulSoup
 
+from .config import cfg
 from .http_utils import get
 
-DIM_MAX = {"answer_block_quality": 30, "self_containment": 25,
-           "structural_readability": 20, "statistical_density": 15,
-           "uniqueness_signals": 10}
+DIM_MAX = cfg("citability.dim_max", {"answer_block_quality": 30, "self_containment": 25,
+                                     "structural_readability": 20, "statistical_density": 15,
+                                     "uniqueness_signals": 10})
 
 _CJK = re.compile(r"[一-鿿]")
 
