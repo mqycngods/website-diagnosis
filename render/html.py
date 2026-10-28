@@ -1,4 +1,11 @@
-"""Jinja2 渲染入口 — ReportData → 单文件中文 HTML。"""
+"""Jinja2 渲染入口 — ReportData → 单文件中文 HTML。
+
+模板加载双模式：
+  1. 本地开发：FileSystemLoader 读 templates/ 目录（改模板即时生效）
+  2. 平台部署：templates/ 无法上传时，从 render/inline_templates.py 的
+     TEMPLATES dict 加载（由 scripts/inline_templates.py 预生成）
+优先用文件系统（开发友好），目录不存在时自动回退内联。
+"""
 from __future__ import annotations
 
 import json
@@ -7,11 +14,27 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-from jinja2 import Environment, FileSystemLoader, select_autoescape
+from jinja2 import Environment, DictLoader, FileSystemLoader, select_autoescape
 
 from .charts import compute_charts
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
+
+
+def _make_env() -> Environment:
+    if TEMPLATES.is_dir():
+        loader = FileSystemLoader(str(TEMPLATES))
+    else:
+        # 平台部署：templates/ 不在，用内联模板
+        from .inline_templates import TEMPLATES as INLINE
+        loader = DictLoader(INLINE)
+    env = Environment(
+        loader=loader,
+        autoescape=select_autoescape(("html", "j2")),
+        trim_blocks=True, lstrip_blocks=True,
+    )
+    env.filters["autolink"] = _autolink_urls
+    return env
 
 
 def _autolink_urls(text: str) -> str:
@@ -41,16 +64,11 @@ def _autolink_urls(text: str) -> str:
     return url_pattern.sub(replace_match, escaped)
 
 
-def render_html(report, output_path, offline: bool = False) -> Path:
+def render_html_string(report, offline: bool = False) -> str:
+    """渲染为 HTML 字符串（不写文件）— 平台工具/无文件系统环境用。"""
     report.chart_data = compute_charts(report)
 
-    env = Environment(
-        loader=FileSystemLoader(str(TEMPLATES)),
-        autoescape=select_autoescape(("html", "j2")),
-        trim_blocks=True, lstrip_blocks=True,
-    )
-    # 注册 autolink 过滤器
-    env.filters["autolink"] = _autolink_urls
+    env = _make_env()
 
     def _safe(o):
         return json.dumps(o, ensure_ascii=False, default=str).replace("</", "<\\/")
@@ -62,7 +80,7 @@ def render_html(report, output_path, offline: bool = False) -> Path:
             echarts_js = ejs.read_text(encoding="utf-8")
 
     template = env.get_template("base.html.j2")
-    html = template.render(
+    return template.render(
         report=report,
         report_json=_safe(report.to_dict()),
         chart_json=_safe(report.chart_data),
@@ -70,6 +88,9 @@ def render_html(report, output_path, offline: bool = False) -> Path:
         generated_at=datetime.now().isoformat(timespec="seconds"),
     )
 
+
+def render_html(report, output_path, offline: bool = False) -> Path:
+    html = render_html_string(report, offline=offline)
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")

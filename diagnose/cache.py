@@ -49,12 +49,15 @@ class CachedResponse:
 class MemoryCache:
     def __init__(self):
         self._d = {}
+        import threading
+        self._lock = threading.Lock()
 
     def get(self, url: str, ua: str = ""):
         return self._d.get(cache_key(url, ua))
 
     def set(self, url: str, ua: str, resp: CachedResponse):
-        self._d[cache_key(url, ua)] = resp
+        with self._lock:
+            self._d[cache_key(url, ua)] = resp
 
 
 class FileCache:

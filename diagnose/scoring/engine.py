@@ -77,10 +77,32 @@ class ScoreEngine:
         self.weights = weights or WEIGHTS
 
     def score(self, baselines: dict, agent_scores: dict = None) -> list[ScoreCard]:
-        """baselines: compute_baselines 的输出；agent_scores: scores.json（可空）。"""
+        """baselines: compute_baselines 的输出；agent_scores: scores.json（可空）。
+
+        兼容两种 dimensions 结构：
+        - dict: {"citability": {"score": 80, ...}, ...}（期望格式）
+        - list: [{"name": "可引用性", "score": 80, ...}, ...]（Agent 常见错误，自动转换）
+        """
         dims = {}
         if isinstance(agent_scores, dict) and "error" not in agent_scores:
-            dims = agent_scores.get("dimensions") or {}
+            raw_dims = agent_scores.get("dimensions") or {}
+            # 兼容 list 结构：Agent 常把 dimensions 写成 [{"name": "可引用性", ...}]
+            if isinstance(raw_dims, list):
+                name_map = {
+                    "可引用性": "citability",
+                    "AI 可达性": "ai_access",
+                    "技术基础": "technical",
+                    "结构化数据": "schema",
+                    "内容质量": "content",
+                }
+                for item in raw_dims:
+                    if isinstance(item, dict):
+                        zh_name = item.get("name", "")
+                        en_key = name_map.get(zh_name)
+                        if en_key:
+                            dims[en_key] = item
+            elif isinstance(raw_dims, dict):
+                dims = raw_dims
 
         cards = []
         for key, (name, weight) in self.weights.items():

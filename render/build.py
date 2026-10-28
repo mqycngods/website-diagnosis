@@ -172,17 +172,42 @@ def _issues_to_findings(issues: dict) -> list:
 
 def build_report(work_dir: Path, domain: str, url: str,
                  audit_date: str = None) -> ReportData:
-    fetch = _load(work_dir, "fetch.json")
-    robots = _load(work_dir, "robots.json")
-    bots = _load(work_dir, "bots.json")
-    citability = _load(work_dir, "citability.json")
-    schema = _load(work_dir, "schema.json")
-    brand = _load(work_dir, "brand.json")
-    technical = _load(work_dir, "technical.json")
-    scores = _load(work_dir, "scores.json")   # agent 产出（可缺）
-    articles = _load(work_dir, "articles.json")
-    signals = _load(work_dir, "signals.json")  # 信号采集（新）
-    issues = _load(work_dir, "issues.json")    # 分析器产出（新）
+    """CLI 入口：从 work_dir 读 11 个 JSON，转 dict 后走 build_report_from_dict。"""
+    data = {
+        "fetch": _load(work_dir, "fetch.json"),
+        "robots": _load(work_dir, "robots.json"),
+        "bots": _load(work_dir, "bots.json"),
+        "citability": _load(work_dir, "citability.json"),
+        "schema": _load(work_dir, "schema.json"),
+        "brand": _load(work_dir, "brand.json"),
+        "technical": _load(work_dir, "technical.json"),
+        "scores": _load(work_dir, "scores.json"),   # agent 产出（可缺）
+        "articles": _load(work_dir, "articles.json"),
+        "signals": _load(work_dir, "signals.json"),
+        "issues": _load(work_dir, "issues.json"),
+    }
+    return build_report_from_dict(data, domain=domain, url=url, audit_date=audit_date)
+
+
+def build_report_from_dict(data: dict, domain: str, url: str,
+                           audit_date: str = None) -> ReportData:
+    """平台工具入口：直接接收 dict（各键对应原 work/*.json 内容）。
+
+    与 build_report 完全等价，只是数据来源从文件换成内存对象——
+    供方案 E 的 render 工具在无法访问文件系统的平台沙箱里使用。
+    缺失的键以 {} 处理（等价于文件不存在）。
+    """
+    fetch = data.get("fetch") or {}
+    robots = data.get("robots") or {}
+    bots = data.get("bots") or {}
+    citability = data.get("citability") or {}
+    schema = data.get("schema") or {}
+    brand = data.get("brand") or {}
+    technical = data.get("technical") or {}
+    scores = data.get("scores") or {}   # agent 产出（可缺）
+    articles = data.get("articles") or {}
+    signals = data.get("signals") or {}
+    issues = data.get("issues") or {}
 
     # 旧版 schema.json → 三态新格式（Article 家族归并 / Product NotSampled / 电商权重）
     schema = _normalize_schema(schema, fetch)

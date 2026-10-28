@@ -2,10 +2,14 @@
 
 先抓浏览器基线，再以每个爬虫 UA 重放，对比状态码 / 内容相似度，
 识别"robots 放行但 WAF 静默拦截"的不一致。
+
+并发：12 个 UA 串行重放最坏 12×15s=180s，改 ThreadPoolExecutor 8 并发后
+压到 ~20s。HTTP 请求是 I/O 密集，GIL 不影响。
 """
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import SequenceMatcher
 from urllib.parse import urlparse
 
@@ -58,8 +62,9 @@ def probe_bots(url: str, timeout: int = 15) -> dict:
     base_html = base.text or ""
     result["baseline"] = {"status": base.status_code, "length": len(base_html)}
     result["wafs_detected"] = [{"product": p} for p in _detect_waf(base)]
+    base_len = result["baseline"]["length"]
 
-    for name, meta in AI_CRAWLERS.items():
+    def _probe_one(name: str, meta: dict) -> dict:
         probe = {"bot": name, "class": meta["class"], "operator": meta["operator"],
                  "status": None, "similarity": None, "blocked": False,
                  "payment_required": False, "block_reason": None}
@@ -79,14 +84,25 @@ def probe_bots(url: str, timeout: int = 15) -> dict:
             else:
                 sim = _similarity(base_html, body)
                 probe["similarity"] = round(sim, 3)
-                ratio = len(body) / result["baseline"]["length"] if result["baseline"]["length"] else 1.0
+                ratio = len(body) / base_len if base_len else 1.0
                 if sim < 0.4 and ratio < 0.5:
                     probe["blocked"] = True
                     probe["block_reason"] = "content_stripped"
         except Exception as e:
             probe["blocked"] = True
             probe["block_reason"] = f"request_error: {e}"
-        result["probes"].append(probe)
+        return probe
+
+    # 8 并发：对同站点压力可控（大多 CDN/WAF 限制在 10 rps），12 个 UA 两批内跑完
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {pool.submit(_probe_one, name, meta): name
+                   for name, meta in AI_CRAWLERS.items()}
+        for fut in as_completed(futures):
+            result["probes"].append(fut.result())
+
+    # 按 AI_CRAWLERS 原顺序排，保证输出稳定（as_completed 顺序随机）
+    order = {name: i for i, name in enumerate(AI_CRAWLERS.keys())}
+    result["probes"].sort(key=lambda p: order.get(p["bot"], 999))
 
     # 分类得分：每类 100 - 100*受阻占比；总分为检索0.5/传统0.35/训练0.15 加权
     by_class = {c: [] for c in BOT_CLASSES}

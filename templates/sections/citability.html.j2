@@ -1,13 +1,25 @@
 {% import "sections/_macros.html.j2" as m %}
 <section class="section" id="ai-citability">
   {% set cit = report.citability %}
+  {# 「已测量」的判定：citability.json 是完整 dict 且无顶层 error 字符串。
+       不再用 total_blocks_analyzed——脚本跑过但没找到 ≥20 词段落时（首页全是标语碎片）
+       也应当作已测量，分数就是 0/100，比「未测量」更能传达「需要先建内容」。 #}
+  {% set measured = cit and cit.get is defined and not cit.get("error") %}
   {% set n_blocks = cit.total_blocks_analyzed or (cit.all_blocks | length) %}
   {{ m.sub_head("内容质量与引用度", "内容被 AI 系统直接引用、摘取的能力。确定性逐段评分，权重 25%。涵盖 citability / answerability / 内容质量 / 内容结构。",
-      (cit.average_citability_score | round | int | string + "/100") if cit.total_blocks_analyzed else "未测量",
-      m.tag_class(cit.average_citability_score | round | int) if cit.total_blocks_analyzed else "none") }}
+      (cit.average_citability_score | round | int | string + "/100") if measured else "未测量",
+      m.tag_class(cit.average_citability_score | round | int) if measured else "none") }}
 
-  {% if not cit.total_blocks_analyzed %}
+  {% if not measured %}
     {{ m.not_measured("AI 可引用性", "python report.py collect <url>（citability）") }}
+  {% elif n_blocks == 0 %}
+    {# 已测量但 0 段：明确告诉客户「首页没有可分析段落」，而不是误报为脚本失败 #}
+    <div class="chart-fallback">
+      <b>0/100 · 未检测到可分析段落</b> — 采集脚本正常运行，但首页正文未找到任何一段 ≥20 词的连贯文字。
+      {% if cit.errors %}{{ cit.errors | join("；") }}。{% endif %}
+      这通常意味着首页全部由产品标语 / 图片 / 短句碎片组成，AI 引擎无法从中摘取可引用的完整段落。
+      优化方向：为核心产品板块与品牌介绍补 60-100 词的结论性段落（含主推型号、关键规格数字、价格区间、第三方评测结论与外链）。
+    </div>
   {% else %}
   {# 采样范围声明：与 06 章节的「已实测/未采样」保持同样的诚实度 #}
   <p style="margin:-10px 0 18px;font-size:12px;color:var(--muted)">
