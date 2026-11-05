@@ -7,16 +7,134 @@ from __future__ import annotations
 
 import re
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment, NavigableString
 
 from .config import cfg
-from .http_utils import get
+from .http_utils import get, is_challenge_page
 
 DIM_MAX = cfg("citability.dim_max", {"answer_block_quality": 30, "self_containment": 25,
                                      "structural_readability": 20, "statistical_density": 15,
                                      "uniqueness_signals": 10})
 
 _CJK = re.compile(r"[一-鿿]")
+
+# 可引用块的最小长度（词）：低于此值的通常是导航项、按钮文案、小标题碎片，
+# 它们既不能被独立引用，积累多了还会稀释整页均分。
+MIN_BLOCK_WORDS = 20
+
+# 块级容器：决定「这一段文本归谁」。不限 p，div/section/li/td 等堆叠正文同样纳入，
+# 否则把正文全部塞进 div 的 SPA / Nuxt 站点会被误判成 0 个可引用段落。
+_BLOCK_TAGS = [
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "p", "div", "section", "article", "main", "aside", "ul", "ol", "li",
+    "dl", "dt", "dd", "table", "thead", "tbody", "tr", "td", "th",
+    "blockquote", "pre", "figure", "figcaption", "details", "summary",
+]
+_HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
+_BLOCK_SET = set(_BLOCK_TAGS)
+
+# 纯 UI 噪音：既不是正文，也不该计入可引用性
+_NOISE_TAGS = {"button", "select", "option", "label", "noscript", "svg", "template"}
+
+
+def _is_visible(el) -> bool:
+    """跳过 aria-hidden / display:none / hidden 的元素——AI 也看不见它们。"""
+    style = (el.get("style") or "").replace(" ", "").lower()
+    if "display:none" in style or "visibility:hidden" in style:
+        return False
+    if el.get("hidden") is not None:
+        return False
+    if (el.get("aria-hidden") or "").lower() == "true":
+        return False
+    return True
+
+
+def _own_text(el) -> str:
+    """只取挂在 el 名下、不属于任何块级后代的文本。
+
+    每个文本节点只在「最深的块级祖先」处被取一次，因此全页拼起来不重不漏。
+    内联子元素（span/a/strong/br…）整棵取，保证一句被 span 拆开的正文仍然完整。
+    """
+    parts = []
+    for child in el.children:
+        # Comment 也是 NavigableString 的子类，不排除就会把
+        # Vue 的 <!--teleport start--> 之类框架注释当成正文
+        if isinstance(child, Comment):
+            continue
+        if isinstance(child, NavigableString):
+            parts.append(str(child))
+        elif getattr(child, "name", None) and child.name not in _BLOCK_SET:
+            # <br> 是行内换行而非块级分界，get_text 不会为它补分隔符；
+            # 不显式补空格会把相邻两段焊成「...needs.But does its...」
+            parts.append(" " + child.get_text(" ", strip=True) + " ")
+    return re.sub(r"\s+", " ", " ".join(parts)).strip()
+
+
+def _is_link_soup(el) -> bool:
+    """链接密度过高的块视为导航/列表入口，不是正文。
+
+    很多站点不把导航放在 <nav> 里（Nuxt/Vue 常直接铺 div），只能按内容特征识别：
+    一个块里绝大多数文字都是 <a> 的锚文本，说明它是入口列表而非叙述性段落。
+    """
+    text = el.get_text(" ", strip=True)
+    if not text:
+        return False
+    link_text = " ".join(a.get_text(" ", strip=True) for a in el.find_all("a"))
+    return len(link_text) > 0.6 * len(text)
+
+
+def _split_long(text: str, limit: int = 400) -> list:
+    """把超长容器（整块内嵌的文章全文）按句子切回段落级。
+
+    用 div 承载正文的站点常把一个栏目的多篇内容全塞进同一个容器，切块器若整块
+    送去评分，长度带会直接判 0 分，反而不如按句子还原成可引用的段落。
+    """
+    # 有站点把整篇文章渲染进单个文本节点、且句号后不补空格（"...needs.But does"），
+    # 先按「标点紧跟大写字母/数字」补空格，这段文本才算能正常断句
+    text = re.sub(r"(?<=[.!?])(?=[A-Z0-9])", " ", text)
+    if _wc(text) <= limit:
+        return [text]
+    # 先按 <br> 转出的换行切，再按句末标点补切
+    pieces = []
+    for line in text.split("\n"):
+        pieces.extend(re.split(r"(?<=[.!?。！？])\s+", line))
+    out, cur = [], ""
+    for s in pieces:
+        s = s.strip()
+        if not s:
+            continue
+        if cur and _wc(cur + " " + s) > limit // 2:
+            out.append(cur)
+            cur = s
+        else:
+            cur = f"{cur} {s}".strip()
+    if cur:
+        out.append(cur)
+    return [p for p in out if _wc(p) >= MIN_BLOCK_WORDS] or [text]
+
+
+def _iter_blocks(soup):
+    """按文档顺序产出 (kind, text)，kind 为 'heading' 或 'text'。
+
+    不依赖 <p> 标签：正文写在 div/span 里同样能提取。
+    """
+    for el in soup.find_all(_BLOCK_TAGS):
+        if el.name in _NOISE_TAGS or el.find_parent(_NOISE_TAGS):
+            continue
+        if not _is_visible(el):
+            continue
+        if el.name in _HEADING_TAGS:
+            t = el.get_text(" ", strip=True)
+            if t:
+                yield "heading", t
+            continue
+        t = _own_text(el)
+        if not t:
+            continue
+        # 入口列表（导航、链接墙）不是叙述性正文，不参与可引用性评分
+        if len(t) > 60 and _is_link_soup(el) and _wc(t) < 120:
+            continue
+        yield "text", t
 
 
 def _wc(text: str) -> int:
@@ -113,30 +231,46 @@ def score_citability(url: str, timeout: int = 30) -> dict:
         result["errors"].append(f"抓取失败：{e}")
         return result
 
+    # 拿到的是 WAF 质询页时不能当作「页面没有正文」——否则会把限流误报成内容缺陷
+    if is_challenge_page(resp.text, resp.status_code):
+        result["errors"].append(
+            f"抓到 WAF 质询页（HTTP {resp.status_code}），本次未测量，请重跑")
+        return result
+
     soup = BeautifulSoup(resp.text, "lxml")
-    for el in soup.find_all(["script", "style", "nav", "footer", "header", "aside", "form"]):
+    for br in soup.find_all("br"):
+        # <br> 是这个站点唯一的段落分界，保留它才能在长容器里正确切回段落
+        br.replace_with(NavigableString("\n"))
+    for el in soup.find_all(["script", "style", "nav", "footer", "header", "aside", "form",
+                             "button", "select", "svg", "noscript"]):
         el.decompose()
 
     blocks, cur_h, cur_p = [], "引言", []
-    for el in soup.find_all(["h1", "h2", "h3", "h4", "p", "ul", "ol", "table"]):
-        if el.name.startswith("h"):
+    for kind, text in _iter_blocks(soup):
+        if kind == "heading":
             if cur_p:
                 combined = " ".join(cur_p)
-                if _wc(combined) >= 20:
+                if _wc(combined) >= MIN_BLOCK_WORDS:
                     blocks.append((cur_h, combined))
-            cur_h, cur_p = el.get_text(strip=True), []
+            cur_h, cur_p = text, []
         else:
-            t = el.get_text(strip=True)
-            if t and _wc(t) >= 5:
-                cur_p.append(t)
+            if _wc(text) >= 5:
+                cur_p.append(text)
     if cur_p:
         combined = " ".join(cur_p)
-        if _wc(combined) >= 20:
+        if _wc(combined) >= MIN_BLOCK_WORDS:
             blocks.append((cur_h, combined))
+
+    # 超长块（整块内嵌的文章）按句子还原成段落，否则长度带直接判 0 分
+    expanded = []
+    for heading, content in blocks:
+        for part in _split_long(content):
+            expanded.append((heading, part))
+    blocks = expanded
 
     scored = [_score_passage(content, heading) for heading, content in blocks]
     if not scored:
-        result["errors"].append("未找到 20 词以上的内容段落")
+        result["errors"].append(f"未找到 {MIN_BLOCK_WORDS} 词以上的内容段落")
         return result
 
     for b in scored:

@@ -19,7 +19,7 @@ PAGE_TYPE_KEYWORDS = {
     "support": ["support", "help", "帮助", "客服", "售后", "支持中心"],
     "faq": ["faq", "faqs", "question", "常见问题", "疑问"],
     "contact": ["contact", "联系", "联络"],
-    "about": ["about", "关于", "品牌", "公司"],
+    "about": ["about", "aboutus", "about-us", "关于", "品牌", "公司"],
     "warranty": ["warranty", "guarantee", "保修", "质保", "退换"],
 }
 

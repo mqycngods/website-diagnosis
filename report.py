@@ -124,8 +124,8 @@ def cmd_collect(url: str, out_dir: Path, cache_dir: Path = None):
     _write(out_dir, "fetch.json", page)
 
     # 1b. 文章页 + 产品页抽样（新鲜度与 Article/Product schema 是页面级信号，首页通常不带）
-    #     正则采样为空时打 pending 标记 + 暴露 internal_links，交给 agent 人工挑选后
-    #     用 `report.py fetch-sampled` 补齐（见 SKILL.md Phase 1.5）。
+    #     Phase 1.5 恒触发：无论正则采样是否命中，都暴露 internal_links 交由 agent 复核挑选，
+    #     再用 `report.py fetch-sampled` 补齐（见 SKILL.md Phase 1.5）。自动采样结果保留为默认值。
     try:
         from diagnose import sampling
         from diagnose.config import cfg
@@ -133,11 +133,8 @@ def cmd_collect(url: str, out_dir: Path, cache_dir: Path = None):
         article_urls = sampling.pick_article_urls(links, limit=cfg("crawler.sample_articles", 5))
         product_urls = sampling.pick_product_urls(links, limit=cfg("crawler.sample_products", 3))
         articles = {"sampled": article_urls, "sampled_products": product_urls, "pages": [],
-                    "product_pages": []}
-        if not article_urls and not product_urls:
-            articles["pending_agent_pick"] = True
-            articles["internal_links"] = links
-        else:
+                    "product_pages": [], "pending_agent_pick": True, "internal_links": links}
+        if article_urls or product_urls:
             _fetch_urls_into(articles, article_urls, product_urls)
     except Exception as e:
         articles = _err(f"页面采样失败：{e}")
@@ -171,7 +168,7 @@ def cmd_collect(url: str, out_dir: Path, cache_dir: Path = None):
 
     # 4. bots UA 实测
     try:
-        bots = bots_mod.probe_bots(url)
+        bots = bots_mod.probe_bots(url, delay=float(cfg("crawler.polite_delay", 1)))
     except Exception as e:
         bots = _err(f"爬虫实测失败：{e}")
     _write(out_dir, "bots.json", bots)

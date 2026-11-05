@@ -3,13 +3,14 @@
 先抓浏览器基线，再以每个爬虫 UA 重放，对比状态码 / 内容相似度，
 识别"robots 放行但 WAF 静默拦截"的不一致。
 
-并发：12 个 UA 串行重放最坏 12×15s=180s，改 ThreadPoolExecutor 8 并发后
-压到 ~20s。HTTP 请求是 I/O 密集，GIL 不影响。
+并发探测会被 Cloudflare 等 WAF 判定为爬虫洪峰并返回 429，导致全部 UA
+被误判为「拦截」。因此改为串行 + 间隔，并对 429/503 做一次退避重试：
+只有重试后仍被限流才记为拦截。
 """
 from __future__ import annotations
 
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 from difflib import SequenceMatcher
 from urllib.parse import urlparse
 
@@ -44,7 +45,7 @@ def _similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, norm(a), norm(b)).ratio()
 
 
-def probe_bots(url: str, timeout: int = 15) -> dict:
+def probe_bots(url: str, timeout: int = 15, delay: float = 1.0) -> dict:
     result = {
         "url": url, "baseline": {}, "wafs_detected": [], "probes": [],
         "class_scores": {}, "verdict": "", "overall_score": None, "errors": [],
@@ -67,15 +68,27 @@ def probe_bots(url: str, timeout: int = 15) -> dict:
     def _probe_one(name: str, meta: dict) -> dict:
         probe = {"bot": name, "class": meta["class"], "operator": meta["operator"],
                  "status": None, "similarity": None, "blocked": False,
-                 "payment_required": False, "block_reason": None}
-        try:
-            r = get(url, timeout=timeout, headers={"User-Agent": meta["ua"]})
+                 "payment_required": False, "block_reason": None,
+                 "attempts": 0}
+        # 429/503 往往来自并发触发的限流而非针对性封禁：退避后重测一次
+        for attempt in range(2):
+            probe["attempts"] = attempt + 1
+            try:
+                r = get(url, timeout=timeout, headers={"User-Agent": meta["ua"]})
+            except Exception as e:
+                probe["blocked"] = True
+                probe["block_reason"] = f"request_error: {e}"
+                return probe
             body = r.text or ""
             probe["status"] = r.status_code
+            if r.status_code == 429 or r.status_code == 503:
+                if attempt == 0 and delay > 0:
+                    time.sleep(delay * 3)
+                continue
             if r.status_code == 402:
                 probe["payment_required"] = True
                 probe["block_reason"] = "payment-required"
-            elif r.status_code in (403, 406, 429, 503):
+            elif r.status_code in (403, 406):
                 probe["blocked"] = True
                 probe["block_reason"] = f"http_{r.status_code}"
             elif is_challenge_page(body, r.status_code):
@@ -88,21 +101,18 @@ def probe_bots(url: str, timeout: int = 15) -> dict:
                 if sim < 0.4 and ratio < 0.5:
                     probe["blocked"] = True
                     probe["block_reason"] = "content_stripped"
-        except Exception as e:
-            probe["blocked"] = True
-            probe["block_reason"] = f"request_error: {e}"
+            return probe
+        probe["blocked"] = True
+        probe["block_reason"] = f"http_{probe['status']}"
         return probe
 
-    # 8 并发：对同站点压力可控（大多 CDN/WAF 限制在 10 rps），12 个 UA 两批内跑完
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = {pool.submit(_probe_one, name, meta): name
-                   for name, meta in AI_CRAWLERS.items()}
-        for fut in as_completed(futures):
-            result["probes"].append(fut.result())
+    # 串行重放：并发会触发 WAF 的速率限制，把限流误判成针对性封禁
+    for name, meta in AI_CRAWLERS.items():
+        result["probes"].append(_probe_one(name, meta))
+        if delay > 0:
+            time.sleep(delay)
 
-    # 按 AI_CRAWLERS 原顺序排，保证输出稳定（as_completed 顺序随机）
-    order = {name: i for i, name in enumerate(AI_CRAWLERS.keys())}
-    result["probes"].sort(key=lambda p: order.get(p["bot"], 999))
+    result["probes"].sort(key=lambda p: list(AI_CRAWLERS).index(p["bot"]))
 
     # 分类得分：每类 100 - 100*受阻占比；总分为检索0.5/传统0.35/训练0.15 加权
     by_class = {c: [] for c in BOT_CLASSES}

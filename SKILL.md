@@ -130,20 +130,20 @@ python report.py collect <url> --out "$RUN_DIR/work/"
 
 某一步失败不阻断：对应 JSON 写 `{"error": "..."}`，报告该章渲染"未测量"。
 
-### Phase 1.5 — Agent 辅助页面采样（**仅当 articles.json 带 `pending_agent_pick: true` 时执行**）
+### Phase 1.5 — Agent 辅助页面采样（**每次诊断必做，`articles.json` 恒带 `pending_agent_pick: true`**）
 
-正则采样依赖 URL 路径特征（`/news/`、`/products/` 等）。对 `index.php?classid=N` 这类动态 URL 站点会失效，此时 `articles.json` 包含 `pending_agent_pick: true` 与完整 `internal_links`。
+正则采样依赖 URL 路径特征（`/news/`、`/products/` 等），对 `index.php?classid=N` 这类动态 URL 站点会失效。因此本阶段不再做条件分支：collect 后的 `articles.json` **总是**包含 `pending_agent_pick: true` 与完整 `internal_links`；若正则采样命中，自动采样的 URL 会同时保留在 `sampled` / `sampled_products` 中作为默认值。
 
 **Agent 的操作**：
-1. 读 `$RUN_DIR/work/articles.json` 的 `internal_links`，从链接文本与 URL 模式识别文章/产品详情页（通常文本为具体标题/型号，而非「更多产品」「了解更多」这类通用按钮；URL 通常带 `id=N` 参数）
-2. 在 `$RUN_DIR/work/agent_picks.json` 写入：
+1. 读 `$RUN_DIR/work/articles.json` 的 `internal_links`（并结合 `sampled` / `sampled_products` 的自动结果），从链接文本与 URL 模式识别文章/产品详情页（通常文本为具体标题/型号，而非「更多产品」「了解更多」这类通用按钮；URL 通常带 `id=N` 参数）
+2. 在 `$RUN_DIR/work/agent_picks.json` 写入最终采样清单（覆盖自动采样时需要把保留的自动 URL 一并写入）：
    ```json
    {"articles": ["url1", "url2", "url3"], "products": ["url4", "url5"]}
    ```
 3. 执行 `python report.py fetch-sampled "$RUN_DIR/work/"`，脚本抓取这些 URL、回写 `articles.json`、用最新数据重建 `schema.json` 与 `signals/issues`
 4. 继续 Phase 2
 
-数量建议：文章 3-5 篇、产品 2-3 个。避免重复采同一栏目。若 internal_links 里确实没有可识别的详情页（纯单页站），跳过本阶段，schema 的 Article/Product 行维持 NotSampled。
+数量建议：文章 3-5 篇、产品 2-3 个。避免重复采同一栏目。若 `internal_links` 里确实没有可识别的详情页（纯单页站），在 `agent_picks.json` 中写空数组，脚本会提示无需抓取，schema 的 Article/Product 行维持 NotSampled。
 
 ### Phase 2 — Agent 评分与中文撰写（你来做，读 prompts/score.md）
 

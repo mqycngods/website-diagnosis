@@ -20,6 +20,7 @@ from . import robots as robots_mod
 from . import schema_check as schema_mod
 from . import technical as tech_mod
 from .cache import MemoryCache
+from .config import cfg
 from . import http_utils
 
 
@@ -97,7 +98,8 @@ def probe_bots(url: str) -> dict:
     """
     _ensure_cache()
     with ThreadPoolExecutor(max_workers=2) as pool:
-        f_bots = pool.submit(_safe(bots_mod.probe_bots, "爬虫实测"), url)
+        f_bots = pool.submit(_safe, bots_mod.probe_bots, "爬虫实测", url,
+                             delay=float(cfg("crawler.polite_delay", 1)))
         f_cit = pool.submit(_safe(cit_mod.score_citability, "可引用性评分"), url)
         return {"bots": f_bots.result(), "citability": f_cit.result()}
 
@@ -111,8 +113,8 @@ def scan_pages(url: str, fetch_page: dict) -> dict:
     用它的 internal_links 做采样、structured_data 构建 schema，避免复抓首页。
 
     返回：{articles, pages, schema}
-      - articles 可能带 pending_agent_pick: true（正则采样失败时，
-        schema 退化为首页面采样；平台 LLM 节点挑 URL 后调 rescan_pages 补齐）
+      - articles 恒带 pending_agent_pick: true（Phase 1.5 每次诊断都触发），
+        平台 LLM 节点复核/补充 URL 后调 rescan_pages 补齐
     """
     _ensure_cache()
     from . import discovery, sampling
@@ -129,12 +131,9 @@ def scan_pages(url: str, fetch_page: dict) -> dict:
         product_urls = sampling.pick_product_urls(
             internal_links, limit=cfg("crawler.sample_products", 3))
         articles = {"sampled": article_urls, "sampled_products": product_urls,
-                    "pages": [], "product_pages": []}
-        if not article_urls and not product_urls:
-            # 正则失效（动态 URL 站），标记让平台 LLM 挑页
-            articles["pending_agent_pick"] = True
-            articles["internal_links"] = internal_links
-        else:
+                    "pages": [], "product_pages": [],
+                    "pending_agent_pick": True, "internal_links": internal_links}
+        if article_urls or product_urls:
             _fetch_urls_into(articles, article_urls, product_urls, delay)
     except Exception as e:
         articles = _err(f"页面采样失败：{e}")

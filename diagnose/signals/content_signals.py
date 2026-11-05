@@ -16,9 +16,17 @@ ABSOLUTE_TERMS = [
     "top choice", "no subscription", "the strongest answer", "the best answer",
 ]
 
-# 数字密度信号（含单位的数值）
+# 数字密度信号：带单位的数值，覆盖原文之外的通用场景（房产/地段/面积/货币等）
 NUMBER_RE = re.compile(
-    r"\b\d+(?:\.\d+)?\s*(?:MP|K|p|GB|TB|mAh|GHz|°|mm|cm|km|h|hours|minutes|%|°C|°F)\b",
+    r"\b\d+(?:[.,]\d+)?\s*-?\s*"
+    r"(?:MP|K|p|GB|TB|mAh|GHz|°|mm|cm|km|h|hours|minutes|%|°C|°F"
+    r"|sqft|sq\.\s?ft|sqm|sq\.\s?m|m²|ft²"
+    r"|units?|rooms?|bedrooms?|baths?|bathrooms?|storeys?|stories|floors?"
+    r"|years?|months?|days?|mins?|sqm"
+    r"|million|billion|bn|k)\b"
+    r"|\bS\$\s?\d+(?:[.,]\d+)*"
+    r"|\b(?:US|S|HK|A)\$\s?\d+(?:[.,]\d+)*"
+    r"|\b\d{1,3}(?:,\d{3})+\b",
     re.I,
 )
 
