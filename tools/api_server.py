@@ -4,14 +4,18 @@
   POST /collect  → 抓取所有确定性事实，结果按 run_id 暂存服务端
   POST /rescan   → 动态站兜底：按 run_id 取已抓数据补抓，重建 articles/schema
   POST /analyze  → 按 run_id 取数据，汇总成 signals/issues/baseline/brand
-  POST /render   → 按 run_id 取数据 + LLM 的 scores，渲染中文 HTML 报告
+  POST /render   → 按 run_id 取数据 + LLM 的 scores，渲染报告并落盘 results/
+  GET  /results/... → 在线访问报告（HTML 直接渲染，MD 纯文本预览）
 
-为什么用 run_id 暂存：平台模板引擎靠 {{var}} 字符串拼接请求体，
-几十 KB 的 JSON 只要有一个变量为空，body 就会被拼成非法 JSON
-（422 json_invalid）。把大数据留在服务端（TTL 2h），平台只传
-run_id 和小参数。传完整 dict 的旧调用方式仍然兼容。
+两个平台侧现实，服务端全部兜底：
+  1. 平台模板引擎靠 {{var}} 原样替换拼请求体——大 JSON 变量为空、或 dict 被
+     str() 成单引号形式，body 都不是合法 JSON。所以四个端点都**手动读原始
+     body**，用 json → ast.literal_eval → 引号替换 三层兜底解析，
+     永远不给平台返回 422 json_invalid。
+  2. 大数据按 run_id 暂存服务端（TTL 2h），平台只传 run_id 和小参数。
 
 注意：内存暂存要求单 worker（uvicorn 默认 1）；多 worker 部署需把 _STORE 换 Redis。
+results/ 落盘在 Render 免费档是临时的，重新部署会丢。
 
 启动：
   pip install -r requirements.txt
@@ -19,6 +23,7 @@ run_id 和小参数。传完整 dict 的旧调用方式仍然兼容。
 """
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -26,7 +31,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 # 让 tools/ 能 import 项目根的 diagnose/render 包
@@ -35,9 +40,10 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Security, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from fastapi.security.api_key import APIKeyHeader
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from diagnose import pipeline
 from render.build import build_report_from_dict
@@ -47,13 +53,12 @@ from render.markdown import render_markdown
 app = FastAPI(
     title="site-diagnosis-zh API",
     description="中文官网 GEO 诊断工具集 — 供 agent 平台工作流调用",
-    version="2.0.0",
+    version="2.1.0",
 )
 
 
 @app.middleware("http")
 async def _log_requests(request: Request, call_next):
-    """把每个进来的请求打到 uvicorn 控制台，便于排查平台侧 URL 配置。"""
     resp = await call_next(request)
     print(f"[api] {request.method} {request.url.path} → {resp.status_code}")
     return resp
@@ -75,6 +80,52 @@ async def require_api_key(key: str = Security(_api_key_header)):
             detail="无效或缺失 X-API-Key 请求头",
         )
     return key
+
+
+# ── 原始 body 分层兜底解析 ───────────────────────────────────
+def _parse_body(raw: bytes) -> dict:
+    """平台模板拼出的 body 可能不是合法 JSON（单引号 dict、变量为空等）。
+
+    分层兜底：json.loads → ast.literal_eval（单引号 Python dict）→
+    单引号换双引号再试 → 全失败返回 {}，绝不 422 json_invalid。
+    """
+    text = raw.decode("utf-8", errors="replace").strip()
+    if not text:
+        return {}
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    try:
+        v = ast.literal_eval(text)
+        if isinstance(v, dict):
+            return v
+    except Exception:
+        pass
+    try:
+        return json.loads(text.replace("'", '"'))
+    except Exception:
+        return {}
+
+
+def _as_json(x: Any) -> Any:
+    """变量值可能是 JSON 字符串 / dict / list / None，统一还原成 Python 对象。"""
+    if x is None or isinstance(x, (dict, list)):
+        return x
+    if isinstance(x, str):
+        s = x.strip()
+        if not s:
+            return None
+        try:
+            return json.loads(s)
+        except Exception:
+            pass
+        try:
+            v = ast.literal_eval(s)
+            return v if isinstance(v, (dict, list)) else None
+        except Exception:
+            return None
+    return x
 
 
 # ── run_id 暂存 ──────────────────────────────────────────────
@@ -101,21 +152,6 @@ def _store_get(run_id: str) -> dict:
             detail=f"run_id 「{run_id}」不存在或已过期（2 小时有效）——请重新跑 diagnose_run",
         )
     return item[0]
-
-
-def _as_json(x: Any) -> Any:
-    """平台变量可能是 JSON 字符串 / dict / list / None，统一还原成 Python 对象。"""
-    if x is None or isinstance(x, (dict, list)):
-        return x
-    if isinstance(x, str):
-        s = x.strip()
-        if not s:
-            return None
-        try:
-            return json.loads(s)
-        except Exception:
-            return None
-    return x
 
 
 # ── 报告落盘 + 在线访问 ──────────────────────────────────────
@@ -152,79 +188,24 @@ def _save_report_files(domain: str, report, html_str: str) -> dict:
     return {"dir_name": dir_name, "html_name": html_name, "md_name": md_name}
 
 
-# ── 请求模型 ──────────────────────────────────────────────────
-
-class CollectRequest(BaseModel):
-    """{"url": "..."}；也兼容平台网关嵌套 {"inputs": {"url": "..."}}"""
-    url: Optional[str] = None
-    inputs: Optional[dict] = None
-    run_id: Optional[str] = None   # 调用方可指定 run_id，缺省服务端生成
-
-    def resolved_url(self) -> str:
-        u = self.url or (self.inputs or {}).get("url") or ""
-        if not u:
-            raise HTTPException(status_code=422, detail="缺少 url 参数")
-        return u
-
-
-class RescanRequest(BaseModel):
-    run_id: Optional[str] = None   # 传入则 fetch_page 从暂存取
-    agent_picks: Any = None        # {"articles": [...], "products": [...]}
-    fetch_page: Any = None         # 旧方式：直接回传 diagnose_run 的 fetch
-
-
-class AnalyzeRequest(BaseModel):
-    run_id: Optional[str] = None   # 传入则以下大字段全部从暂存取
-    url: str = ""
-    fetch_page: Any = None
-    articles: Any = None
-    pages_audit: Any = None
-    schema_: Any = Field(default=None, alias="schema")
-    citability: Any = None
-    bots: Any = None
-    technical: Any = None
-
-    model_config = {"populate_by_name": True}
-
-
-class RenderRequest(BaseModel):
-    run_id: Optional[str] = None   # 传入则以下大字段全部从暂存取
-    domain: str = ""
-    url: str = ""
-    scores: Any = None             # LLM 写的评分对象（dict 或 JSON 字符串，可缺省走兜底）
-    offline: bool = False
-    # 旧方式：完整回传
-    fetch: Any = None
-    robots: Any = None
-    bots: Any = None
-    citability: Any = None
-    schema_: Any = Field(default=None, alias="schema")
-    articles: Any = None
-    technical: Any = None
-    brand: Any = None
-    issues: Any = None
-    signals_summary: Any = None
-
-    model_config = {"populate_by_name": True}
-
-
 # ── 端点 ─────────────────────────────────────────────────────
 
 @app.post("/collect")
 @api_router.post("/collect")
-def collect(req: CollectRequest, _key: str = Depends(require_api_key)) -> dict:
+async def collect(request: Request, _key: str = Depends(require_api_key)):
     """一站式抓取：fetch_core + probe_bots + scan_pages（并发 + 25s 软超时）。
 
     返回 {url, run_id, fetch, robots, technical, bots, citability,
           articles, pages, schema, _meta}。
     后续 rescan/analyze/render 只需回传 run_id，不必搬运大 JSON。
-
-    _meta.partial=true 时对应子 dict 为 {"error": "..."}，HTTP 仍为 200——
-    让 LLM 拿到部分数据继续推理，而不是整个工具调用失败。
     """
-    url = req.resolved_url()
-    result = pipeline.fetch_all(url, soft_timeout=25.0)
-    run_id = (req.run_id or "").strip() or uuid.uuid4().hex[:12]
+    body = _parse_body(await request.body())
+    url = (body.get("url") or (body.get("inputs") or {}).get("url") or "").strip()
+    if not url:
+        raise HTTPException(status_code=422, detail="缺少 url 参数")
+
+    result = await run_in_threadpool(pipeline.fetch_all, url, 25.0)
+    run_id = str(body.get("run_id") or "").strip() or uuid.uuid4().hex[:12]
     _store_put(run_id, {"url": url, **result})
     result["run_id"] = run_id
     return result
@@ -232,40 +213,44 @@ def collect(req: CollectRequest, _key: str = Depends(require_api_key)) -> dict:
 
 @app.post("/rescan")
 @api_router.post("/rescan")
-def rescan(req: RescanRequest, _key: str = Depends(require_api_key)) -> dict:
+async def rescan(request: Request, _key: str = Depends(require_api_key)):
     """动态站补抓：LLM 挑完 URL 后回传，重建 articles + schema。
 
-    传 run_id 时 fetch_page 自动从暂存取；也兼容旧方式直接回传 fetch_page。
-    返回 {articles, schema}，并已同步写回暂存（后续 analyze/render 直接用）。
+    传 run_id 时 fetch_page 自动从暂存取；返回 {articles, schema, run_id}，
+    并已同步写回暂存（后续 analyze/render 直接用）。
     """
-    if req.run_id:
-        stored = _store_get(req.run_id)
+    body = _parse_body(await request.body())
+    run_id = str(body.get("run_id") or "").strip()
+    if run_id:
+        stored = _store_get(run_id)
         fetch_page = stored.get("fetch") or {}
     else:
         stored = None
-        fetch_page = _as_json(req.fetch_page) or {}
+        fetch_page = _as_json(body.get("fetch_page")) or {}
 
-    agent_picks = _as_json(req.agent_picks) or {}
-    result = pipeline.rescan_pages(agent_picks, fetch_page)
+    agent_picks = _as_json(body.get("agent_picks")) or {}
+    result = await run_in_threadpool(pipeline.rescan_pages, agent_picks, fetch_page)
 
     if stored is not None:
         stored["articles"] = result.get("articles") or stored.get("articles") or {}
         stored["schema"] = result.get("schema") or stored.get("schema") or {}
-        _store_put(req.run_id, stored)
-        result["run_id"] = req.run_id
+        _store_put(run_id, stored)
+        result["run_id"] = run_id
     return result
 
 
 @app.post("/analyze")
 @api_router.post("/analyze")
-def analyze(req: AnalyzeRequest, _key: str = Depends(require_api_key)) -> dict:
+async def analyze(request: Request, _key: str = Depends(require_api_key)):
     """纯计算：signals + analyzers + baseline_scores + brand。
 
     传 run_id 时所有大字段从暂存取；返回 {issues, signals_summary,
     baseline_scores, brand}，并已写回暂存供 /render 使用。
     """
-    if req.run_id:
-        stored = _store_get(req.run_id)
+    body = _parse_body(await request.body())
+    run_id = str(body.get("run_id") or "").strip()
+    if run_id:
+        stored = _store_get(run_id)
         fetch_page = stored.get("fetch") or {}
         articles = stored.get("articles") or {}
         pages_audit = stored.get("pages") or {}
@@ -273,18 +258,19 @@ def analyze(req: AnalyzeRequest, _key: str = Depends(require_api_key)) -> dict:
         citability = stored.get("citability")
         bots = stored.get("bots")
         technical = stored.get("technical")
-        url = req.url or stored.get("url", "")
+        url = body.get("url") or stored.get("url", "")
     else:
-        fetch_page = _as_json(req.fetch_page) or {}
-        articles = _as_json(req.articles) or {}
-        pages_audit = _as_json(req.pages_audit) or {}
-        schema = _as_json(req.schema_) or {}
-        citability = _as_json(req.citability)
-        bots = _as_json(req.bots)
-        technical = _as_json(req.technical)
-        url = req.url
+        fetch_page = _as_json(body.get("fetch_page")) or {}
+        articles = _as_json(body.get("articles")) or {}
+        pages_audit = _as_json(body.get("pages_audit")) or {}
+        schema = _as_json(body.get("schema")) or {}
+        citability = _as_json(body.get("citability"))
+        bots = _as_json(body.get("bots"))
+        technical = _as_json(body.get("technical"))
+        url = body.get("url", "")
 
-    result = pipeline.analyze(
+    result = await run_in_threadpool(
+        pipeline.analyze,
         fetch_page=fetch_page,
         articles=articles,
         pages_audit=pages_audit,
@@ -295,32 +281,37 @@ def analyze(req: AnalyzeRequest, _key: str = Depends(require_api_key)) -> dict:
         url=url,
     )
 
-    if req.run_id:
+    if run_id:
         stored.update({
             "brand": result.get("brand"),
             "issues": result.get("issues"),
             "signals_summary": result.get("signals_summary"),
             "baseline_scores": result.get("baseline_scores"),
         })
-        _store_put(req.run_id, stored)
+        _store_put(run_id, stored)
     return result
 
 
 @app.post("/render")
 @api_router.post("/render")
-def render(req: RenderRequest, request: Request, _key: str = Depends(require_api_key)) -> dict:
+async def render(request: Request, _key: str = Depends(require_api_key)):
     """渲染中文 HTML 报告，落盘 results/，并返回在线访问链接。
 
     传 run_id 时所有大字段从暂存取，body 只需 {run_id, scores}。
-    scores 可缺省——缺省时渲染器用确定性数据生成兜底发现。
+    scores 可缺省/格式不合法——缺省时渲染器用确定性数据生成兜底发现。
 
     返回 {success, html, size, domain, url, filename, result_dir,
           report_path, report_url, md_path, md_url, is_fallback, error}。
     report_url 可直接浏览器打开，md_url 是 Markdown 纯文本预览。
     """
-    if req.run_id:
-        stored = _store_get(req.run_id)
-        url = req.url or stored.get("url", "")
+    body = _parse_body(await request.body())
+    run_id = str(body.get("run_id") or "").strip()
+    scores = _as_json(body.get("scores")) or {}
+    offline = bool(body.get("offline", False))
+
+    if run_id:
+        stored = _store_get(run_id)
+        url = body.get("url") or stored.get("url", "")
         data = {
             "fetch": stored.get("fetch") or {},
             "robots": stored.get("robots") or {},
@@ -329,34 +320,35 @@ def render(req: RenderRequest, request: Request, _key: str = Depends(require_api
             "schema": stored.get("schema") or {},
             "brand": stored.get("brand") or {},
             "technical": stored.get("technical") or {},
-            "scores": _as_json(req.scores) or {},
+            "scores": scores,
             "articles": stored.get("articles") or {},
             "signals": stored.get("signals_summary") or {},
             "issues": stored.get("issues") or {},
         }
     else:
-        url = req.url
+        url = body.get("url", "")
         data = {
-            "fetch": _as_json(req.fetch) or {},
-            "robots": _as_json(req.robots) or {},
-            "bots": _as_json(req.bots) or {},
-            "citability": _as_json(req.citability) or {},
-            "schema": _as_json(req.schema_) or {},
-            "brand": _as_json(req.brand) or {},
-            "technical": _as_json(req.technical) or {},
-            "scores": _as_json(req.scores) or {},
-            "articles": _as_json(req.articles) or {},
-            "signals": _as_json(req.signals_summary) or {},
-            "issues": _as_json(req.issues) or {},
+            "fetch": _as_json(body.get("fetch")) or {},
+            "robots": _as_json(body.get("robots")) or {},
+            "bots": _as_json(body.get("bots")) or {},
+            "citability": _as_json(body.get("citability")) or {},
+            "schema": _as_json(body.get("schema")) or {},
+            "brand": _as_json(body.get("brand")) or {},
+            "technical": _as_json(body.get("technical")) or {},
+            "scores": scores,
+            "articles": _as_json(body.get("articles")) or {},
+            "signals": _as_json(body.get("signals_summary")) or {},
+            "issues": _as_json(body.get("issues")) or {},
         }
 
-    domain = req.domain or urlparse(url).netloc.replace("www.", "").replace(":", "_") or "site"
-    safe_domain = "".join(c if c.isalnum() or c in ".-_" else "_" for c in domain) or "site"
+    domain = str(body.get("domain") or "") or \
+        urlparse(url).netloc.replace("www.", "").replace(":", "_") or "site"
+    safe_domain = _NAME_SAFE.sub("_", domain) or "site"
     filename = f"{safe_domain}_geo_report.html"
 
     try:
-        report = build_report_from_dict(data, domain=domain, url=url)
-        html_str = render_html_string(report, offline=req.offline)
+        report = await run_in_threadpool(build_report_from_dict, data, domain, url)
+        html_str = await run_in_threadpool(render_html_string, report, offline)
         saved = _save_report_files(domain, report, html_str)
         base = _base_url(request)
         prefix = f"/results/{saved['dir_name']}"
