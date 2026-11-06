@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 import uuid
@@ -34,12 +35,14 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Security, status
+from fastapi.responses import Response
 from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel, Field
 
 from diagnose import pipeline
 from render.build import build_report_from_dict
 from render.html import render_html_string
+from render.markdown import render_markdown
 
 app = FastAPI(
     title="site-diagnosis-zh API",
@@ -113,6 +116,40 @@ def _as_json(x: Any) -> Any:
         except Exception:
             return None
     return x
+
+
+# ── 报告落盘 + 在线访问 ──────────────────────────────────────
+RESULTS_DIR = _ROOT / "results"
+RESULTS_DIR.mkdir(exist_ok=True)
+_NAME_SAFE = re.compile(r"[^0-9A-Za-z._-]+")
+_FILE_MEDIA = {
+    ".html": "text/html; charset=utf-8",
+    ".md": "text/plain; charset=utf-8",   # 浏览器内联显示，用作 md 预览
+    ".json": "application/json; charset=utf-8",
+}
+
+
+def _base_url(request: Request) -> str:
+    """尽力还原对外可访问的 base URL（Render 代理会带 X-Forwarded-* 头）。"""
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    return f"{proto}://{host}"
+
+
+def _save_report_files(domain: str, report, html_str: str) -> dict:
+    """把 HTML / Markdown / 原始数据落盘到 results/<domain>-<ts>/。"""
+    safe = _NAME_SAFE.sub("_", domain) or "site"
+    dir_name = f"{safe}-{time.strftime('%Y%m%d-%H%M%S')}"
+    out_dir = RESULTS_DIR / dir_name
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    html_name = f"{safe}-geo-report.html"
+    md_name = f"{safe}-geo-report.md"
+    (out_dir / html_name).write_text(html_str, encoding="utf-8")
+    render_markdown(report, out_dir / md_name)
+    (out_dir / "report-data.json").write_text(
+        json.dumps(report.to_dict(), ensure_ascii=False, default=str), encoding="utf-8")
+    return {"dir_name": dir_name, "html_name": html_name, "md_name": md_name}
 
 
 # ── 请求模型 ──────────────────────────────────────────────────
@@ -271,13 +308,15 @@ def analyze(req: AnalyzeRequest, _key: str = Depends(require_api_key)) -> dict:
 
 @app.post("/render")
 @api_router.post("/render")
-def render(req: RenderRequest, _key: str = Depends(require_api_key)) -> dict:
-    """渲染中文 HTML 报告（返回 JSON 包装，便于 agent 平台变量传递）。
+def render(req: RenderRequest, request: Request, _key: str = Depends(require_api_key)) -> dict:
+    """渲染中文 HTML 报告，落盘 results/，并返回在线访问链接。
 
     传 run_id 时所有大字段从暂存取，body 只需 {run_id, scores}。
     scores 可缺省——缺省时渲染器用确定性数据生成兜底发现。
 
-    返回 {success, html, size, domain, url, filename, is_fallback, error}。
+    返回 {success, html, size, domain, url, filename, result_dir,
+          report_path, report_url, md_path, md_url, is_fallback, error}。
+    report_url 可直接浏览器打开，md_url 是 Markdown 纯文本预览。
     """
     if req.run_id:
         stored = _store_get(req.run_id)
@@ -318,13 +357,21 @@ def render(req: RenderRequest, _key: str = Depends(require_api_key)) -> dict:
     try:
         report = build_report_from_dict(data, domain=domain, url=url)
         html_str = render_html_string(report, offline=req.offline)
+        saved = _save_report_files(domain, report, html_str)
+        base = _base_url(request)
+        prefix = f"/results/{saved['dir_name']}"
         return {
             "success": True,
             "html": html_str,
             "size": len(html_str),
             "domain": domain,
             "url": url,
-            "filename": filename,
+            "filename": saved["html_name"],
+            "result_dir": f"results/{saved['dir_name']}",
+            "report_path": f"{prefix}/{saved['html_name']}",
+            "report_url": f"{base}{prefix}/{saved['html_name']}",
+            "md_path": f"{prefix}/{saved['md_name']}",
+            "md_url": f"{base}{prefix}/{saved['md_name']}",
             "is_fallback": False,
             "error": None,
         }
@@ -376,6 +423,21 @@ def render(req: RenderRequest, _key: str = Depends(require_api_key)) -> dict:
             "is_fallback": True,
             "error": str(e),
         }
+
+
+@app.get("/results/{dir_name}/{file_name}")
+@api_router.get("/results/{dir_name}/{file_name}")
+def get_result_file(dir_name: str, file_name: str):
+    """在线访问 results/ 下的报告：HTML 直接渲染，MD 以纯文本预览（公开访问）。"""
+    if not re.fullmatch(r"[0-9A-Za-z._-]+", dir_name) or not re.fullmatch(r"[0-9A-Za-z._-]+", file_name):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    path = (RESULTS_DIR / dir_name / file_name).resolve()
+    if not str(path).startswith(str(RESULTS_DIR.resolve())) or not path.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    media = _FILE_MEDIA.get(path.suffix, "application/octet-stream")
+    if path.suffix == ".json":
+        return Response(content=path.read_text(encoding="utf-8"), media_type=media)
+    return Response(content=path.read_bytes(), media_type=media)
 
 
 @app.get("/health")
