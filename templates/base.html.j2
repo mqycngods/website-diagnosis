@@ -63,6 +63,17 @@ a{color:inherit;text-underline-offset:3px;word-break:break-all}
 .report-group-appendix .group-head h2{color:var(--muted);font-size:18px}
 .report-group-appendix .group-no{color:var(--faint)}
 
+/* P0 前置修改判定横幅：置于总览之前，全报告最先看到的结论 */
+.p0-gate{margin:0 0 28px;padding:20px 24px;border:1px solid var(--red-line);border-left:4px solid var(--red);border-radius:var(--r-md);background:var(--red-bg);scroll-margin-top:20px}
+.p0-gate.has-blocking{background:var(--red-bg)}
+.p0-gate.no-blocking{background:var(--green-bg);border-color:var(--green-line);border-left-color:var(--green)}
+.p0-gate-label{margin:0 0 6px;font:700 10.5px/1.4 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--red)}
+.p0-gate.no-blocking .p0-gate-label{color:var(--green)}
+.p0-gate-body{margin:0;font-size:14.5px;line-height:1.75;color:var(--ink)}
+.p0-gate-jump{display:inline-flex;align-items:center;gap:6px;margin-top:14px;padding:7px 14px;border:1px solid var(--red);border-radius:var(--r-sm);background:var(--white);color:var(--red);font:700 12px/1.4 var(--mono);letter-spacing:.04em;text-decoration:none;cursor:pointer;transition:background .15s,color .15s}
+.p0-gate-jump:hover{background:var(--red);color:#fff}
+#p0-tier{scroll-margin-top:20px}
+
 /* 组内 section 微调：executive 突出，appendix 降级 */
 .report-group-executive .section{box-shadow:var(--shadow)}
 .report-group-appendix .section{background:var(--surface);box-shadow:var(--shadow-flat);border-style:dashed}
@@ -452,6 +463,7 @@ span.hint-icon:hover{color:var(--orange);border-color:var(--orange)}
     {# GROUP 01 — EXECUTIVE OVERVIEW #}
     <div class="toc-group">
       <div class="toc-group-title">01 总览</div>
+      <a href="#p0-gate" class="toc-sub">P0 前置修改判定</a>
       <a href="#geo-score" class="toc-sub">分析总结 · GEO 就绪度评分</a>
     </div>
 
@@ -478,6 +490,21 @@ span.hint-icon:hover{color:var(--orange);border-color:var(--orange)}
   </aside>
 
   <main class="content">
+    {# ══════════════════════════════════════════════════════════
+       P0 前置修改判定 — 全报告最先看到的结论
+       回答：动手前必须先修什么？
+       ══════════════════════════════════════════════════════════ #}
+    {% if report.executive_summary.p0_blocking_note %}
+    {% set has_p0 = (report.findings | selectattr("severity", "equalto", "Critical") | list | length) > 0 %}
+    <div class="p0-gate {{ 'has-blocking' if has_p0 else 'no-blocking' }}" id="p0-gate">
+      <p class="p0-gate-label">P0 前置修改判定</p>
+      <p class="p0-gate-body">{{ report.executive_summary.p0_blocking_note }}</p>
+      {% if has_p0 %}
+      <a href="#p0-tier" class="p0-gate-jump">查看 P0 清单 ↓</a>
+      {% endif %}
+    </div>
+    {% endif %}
+
     {# ══════════════════════════════════════════════════════════
        GROUP 01 — EXECUTIVE OVERVIEW
        回答：这个网站目前 GEO 表现怎么样？

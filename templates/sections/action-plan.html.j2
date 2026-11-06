@@ -34,7 +34,7 @@
     ] %}
       {% set group = report.priority_actions | selectattr("priority", "equalto", tier) | list %}
       {% if group %}
-      <div class="action-tier">
+      <div class="action-tier"{% if tier == "P0" %} id="p0-tier"{% endif %}>
         <header class="action-tier-head">
           <h4 class="action-tier-title">{{ tier_label }}</h4>
           <small class="action-tier-hint">{{ tier_hint }}</small>

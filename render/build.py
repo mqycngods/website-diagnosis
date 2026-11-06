@@ -413,9 +413,17 @@ def build_report_from_dict(data: dict, domain: str, url: str,
     except Exception as e:
         # report_builder 失败时降级：使用基础数据
         print(f"[build] ⚠️ report_builder 失败：{e}，使用降级数据", file=sys.stderr)
+        # 降级路径同样给出 P0 前置修改判定，保证报告/清单总结区不空。
+        p0_count = sum(1 for f in findings if getattr(f, "severity", "") == "Critical")
+        if p0_count > 0:
+            p0_note = (f"当前官网不可直接 GEO 优化，包含 {p0_count} 项 P0 级任务需修改后进行；"
+                       "在这些问题修复之前，其余优化动作难以生效。")
+        else:
+            p0_note = "可进行 GEO 优化，以下内容可慢慢调整。"
         executive_summary = ExecutiveSummary(
             geo_score=geo, label=label, label_zh=ZH_LABEL.get(label, label),
             overall_assessment=scores.get("description", "") if _ok(scores) else "",
+            p0_blocking_note=p0_note,
         )
         page_recommendations = []
         priority_actions = []

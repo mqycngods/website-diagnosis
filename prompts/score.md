@@ -42,21 +42,74 @@
 | schema | 10% | schema.json | GEO 关键类型覆盖率、sameAs 完整性（仅对 Organization 强制）、有无 Person/Article |
 | platform | 10% | bots.json | 各 AI 平台爬虫实测可达性（检索类权重最高） |
 
-## severity 判定矩阵（硬性约束）
+## Critical（P0）判定依据 — 五类 GEO 阻塞
 
-severity 不是「影响越大级别越高」。**必须同时满足三列**，任何一列不符就降一级：
+打 Critical 前先问一句：**在修好它之前，无论内容和 schema 怎么补，AI 是否都不可能引用这家站？**
+答案是「是」才够 Critical。凡是「会影响表现」而不是「切断引用」的，一律降级。
 
-| severity | 影响面 | 修复成本 | 建议窗口 |
-|---|---|---|---|
-| Critical | 阻塞 GEO 基础能力 / 解锁后续多个任务 | ≤ 4 小时 | 0-7 天 |
-| High | 对核心 GEO 能力有明显帮助 | ≤ 2 天 | 1-4 周 |
-| Medium | 优化项，对 GEO 有一定影响 | ≤ 1 天 | 1-3 月 |
-| Low | 边缘优化 / 防御性工作 | 任意 | 长期 |
+Critical 只出自以下五类，逐层判断：
 
-**禁止情形**：
-- 若一条 finding 影响大但修复需要数周到数月（Wikidata 词条、第三方媒体报道积累、品牌外部档案建设），severity **不能**仅因影响大就标 Critical——应标 Medium 或 Low，对应行动进 `strategic`
+### 1. 抓取通道被切断（最硬）
+
+AI 爬虫根本拿不到页面。任一成立即为 Critical：
+
+- **WAF / CDN 按 UA 拦截**：Cloudflare 托管挑战、防火墙规则拦掉 GPTBot / ClaudeBot / PerplexityBot / OAI-SearchBot。人肉打开完全正常、AI 侧 403，是最隐蔽的阻塞
+- **robots.txt 禁止检索类爬虫**：注意区分——禁 GPTBot / ClaudeBot（训练类）只是不参与训练；禁 **OAI-SearchBot / Claude-SearchBot / PerplexityBot**（检索类）才是真断供，站点在 ChatGPT Search 与 Perplexity 中彻底消失
+- **无 SSR / 预渲染**：服务端 HTML 是空壳，正文依赖 JS 生成。多数 AI 爬虫不执行 JS
+- **正文被墙遮挡**：登录墙、cookie 同意遮罩盖住正文、付费墙
+- **页面发现不了**：无 sitemap、sitemap 全 404 或过期、导航靠 JS 拼装、内链断，爬虫只能摸到首页
+- **全面 5xx 或响应极慢**：AI 爬虫的超时阈值比 Googlebot 保守得多
+
+### 2. 抓到了但读不出内容
+
+页面拿到了，但正文里没有可提取的信息：
+
+- 核心信息全在**图片 / Canvas / 视频**里（产品参数做成图、公司简介做成海报）
+- 关键内容放在**PDF 单独文件**，页面正文只有「下载白皮书」
+- **标题层级缺失或混乱**，正文全 div 堆砌、无语义标签
+- 文案是**营销短句堆叠**，没有一句完整、自包含的可摘取陈述
+
+### 3. 读懂了但不敢引用（GEO 与 SEO 最大的分野）
+
+AI 的引用决策本质是一次**事实核验**。矛盾的数据比缺失的数据更危险——缺失只降低权重，矛盾直接触发不信任：
+
+- **品牌身份自相矛盾**：联系方式、地址、公司全称存在多套值（典型：模板占位邮箱 `contact@yourstore.com`、境外模板残留的假电话假地址）
+- **同一实体跨处冲突**：schema 作者是 A、文末 About the Author 介绍 B/C/D；页面写成立 1994、About 页写 2003
+- **结构化作者 / 组织信息全站消失**：无 Organization、无 Person
+- **零数据、零来源、零署名**：通篇「行业领先」「全球第一」，无可核验数字、无第三方出处、无可追责作者
+
+### 4. 实体锚定断裂
+
+被引用了，但 AI 认不出这是谁：
+
+- **全站无 Organization schema**，或只在子页有、首页没有（首页才是品牌官方声明页）
+- **Organization.sameAs 为空**：无法把品牌字符串绑定到 Wikidata / LinkedIn / Crunchbase 上的同一实体
+- **下游实体不指回上游**：Product.brand 是纯文本而非指向 Organization 的 `@id`；Article.publisher 不指 Organization——产品页和文章页在 AI 眼里是孤岛
+- **无稳定 `@id`**：同一实体在不同页面被识别成不同东西
+
+### 5. 时效性（准阻塞）
+
+- 全站**无任何机器可读日期**（dateModified / `<time datetime>` / sitemap lastmod）
+- 首页内容长期未更新，而同类竞品持续更新——检索类查询进不了候选池
+
+---
+
+## severity 分级矩阵
+
+确定是 Critical 后，其余各级按同一套逻辑分层：
+
+| severity | 判定标准 | 建议窗口 |
+|---|---|---|
+| **Critical** | 命中上述五类之一——不修则零引用 | 0-7 天 |
+| **High** | 不阻塞引用，但明显压低引用概率与质量（如 citability 偏低、内容深度不足、缺日期之外的 schema 短板） | 1-4 周 |
+| **Medium** | 优化项，有影响但可延后 | 1-3 月 |
+| **Low** | 边缘优化 / 防御性工作 | 长期 |
+
+**修复成本只影响排序，不影响定级**：
+- 若一条 finding 影响大但修复需数周到数月（Wikidata 词条、第三方媒体报道积累、品牌外部档案建设），severity **不能**仅因影响大就标 Critical——应标 Medium 或 Low，对应行动进 `strategic`
 - 若一条 finding 修复极快但影响微弱（补 favicon、加 referrer-policy），severity 不能仅因快就标 Critical——应标 Medium 或 Low
-- 「影响大 + 耗时长」与「影响小 + 耗时短」的工作都**不属于 Critical**；Critical 只留给「影响大 + 耗时短」
+
+**一句话概括**：Critical 是「通路问题」和「可信度崩塌问题」，不是「内容质量问题」。内容质量决定能拿多少引用，通路和可信度决定能不能拿到引用。
 
 ## finding 准入门槛（防「什么都算 GEO 问题」）
 

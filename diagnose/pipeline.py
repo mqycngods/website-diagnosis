@@ -355,8 +355,9 @@ def fetch_all(url: str, soft_timeout: float = 25.0) -> dict:
 
     def _merge(src: dict, mapping: dict):
         """把子任务结果按 mapping 并入 out。mapping: {out_key: src_key}"""
+        fallback = src.get("error") if isinstance(src, dict) else None
         for ok, sk in mapping.items():
-            out[ok] = src.get(sk, _err("子任务未返回"))
+            out[ok] = src.get(sk, _err(fallback or "子任务未返回"))
 
     # 阶段 1：fetch_core 必须先跑（scan_pages 依赖它的 fetch）
     core = fetch_core(url)

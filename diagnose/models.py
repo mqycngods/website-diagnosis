@@ -218,3 +218,7 @@ class ExecutiveSummary:
     overall_assessment: str = ""
     top_priorities: list = field(default_factory=list)
     recommended_next_step: str = ""
+    # 是否存在 P0 级 GEO 阻塞问题（必须前置修改）的人话总结。
+    # 由 recommendations/engine._build_executive_summary 根据 findings 中
+    # severity=Critical 的数量生成；空串表示该报告未生成此判定（降级路径）。
+    p0_blocking_note: str = ""

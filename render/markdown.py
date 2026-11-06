@@ -19,6 +19,10 @@ def render_markdown(report, output_path=None) -> str:
     a(f"- GEO 总分：**{report.geo_score}**（{report.label_zh or report.label}）")
     if report.description:
         a(f"- 核心判断：{report.description}")
+    # P0 前置修改判定：与 HTML 报告的「核心判断 / 行动清单」两处提示保持一致。
+    p0_note = getattr(report.executive_summary, "p0_blocking_note", "") if report.executive_summary else ""
+    if p0_note:
+        a(f"- P0 前置修改判定：{p0_note}")
     a("")
 
     a("## 维度评分")
@@ -49,6 +53,10 @@ def render_markdown(report, output_path=None) -> str:
     if report.priority_actions:
         a("## 优先级行动")
         a("")
+        p0_note = getattr(report.executive_summary, "p0_blocking_note", "") if report.executive_summary else ""
+        if p0_note:
+            a(f"> **P0 前置修改判定**：{p0_note}")
+            a("")
         for pa in report.priority_actions:
             title = pa.title or (pa.action or "")[:40]
             a(f"- [ ] **{pa.priority}** {title}"
