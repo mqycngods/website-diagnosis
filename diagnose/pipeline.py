@@ -98,7 +98,7 @@ def probe_bots(url: str) -> dict:
     """
     _ensure_cache()
     with ThreadPoolExecutor(max_workers=2) as pool:
-        f_bots = pool.submit(_safe, bots_mod.probe_bots, "爬虫实测", url,
+        f_bots = pool.submit(_safe(bots_mod.probe_bots, "爬虫实测"), url,
                              delay=float(cfg("crawler.polite_delay", 1)))
         f_cit = pool.submit(_safe(cit_mod.score_citability, "可引用性评分"), url)
         return {"bots": f_bots.result(), "citability": f_cit.result()}
