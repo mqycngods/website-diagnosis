@@ -204,7 +204,7 @@ async def collect(request: Request, _key: str = Depends(require_api_key)):
     if not url:
         raise HTTPException(status_code=422, detail="缺少 url 参数")
 
-    result = await run_in_threadpool(pipeline.fetch_all, url, 25.0)
+    result = await run_in_threadpool(pipeline.fetch_all, url, 60.0)
     run_id = str(body.get("run_id") or "").strip() or uuid.uuid4().hex[:12]
     _store_put(run_id, {"url": url, **result})
     result["run_id"] = run_id

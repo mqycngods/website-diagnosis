@@ -83,7 +83,7 @@ AI 的引用决策本质是一次**事实核验**。矛盾的数据比缺失的�
 被引用了，但 AI 认不出这是谁：
 
 - **全站无 Organization schema**，或只在子页有、首页没有（首页才是品牌官方声明页）
-- **Organization.sameAs 为空**：无法把品牌字符串绑定到 Wikidata / LinkedIn / Crunchbase 上的同一实体
+- **Organization.sameAs 为空**：无法把品牌字符串绑定到 Wikidata / LinkedIn / Crunchbase 上的同一实体。**定级单独看**：仅当全站无 Organization（品牌根本没锚定）时才随本类升 Critical；**有 Organization 时 sameAs 空 → 定 High**（削弱外部图谱对齐，但不切断引用）
 - **下游实体不指回上游**：Product.brand 是纯文本而非指向 Organization 的 `@id`；Article.publisher 不指 Organization——产品页和文章页在 AI 眼里是孤岛
 - **无稳定 `@id`**：同一实体在不同页面被识别成不同东西
 
@@ -126,7 +126,7 @@ AI 的引用决策本质是一次**事实核验**。矛盾的数据比缺失的�
 写 `findings` 数组前，必须先做**根因聚类**：
 
 1. 把候选问题列成草稿，每条标注「根因」（缺什么 / 错什么 / 多什么）
-2. **同根因必须合并**：若两条草稿的根因相同（例：「主页缺第三方外链」与「主页无权威引用」），必须合并为一条 finding，**不允许拆成两条不同 severity**
+2. **同根因必须合并**：若两条草稿的根因相同（例：「主页缺第三方外链」与「主页无权威引用」），必须合并为一条 finding，**不允许拆成两条不同 severity**。**高频重复示例**：「首页零结构化数据」与「首页缺 Organization schema」同根因（首页无 JSON-LD），必须合并为一条，如「首页无任何 JSON-LD（含 Organization），品牌官方声明页在机器侧空白」
 3. **现象与测量必须合并**：若两条草稿是同一根因的「现象」与「测量」（例：「citability 低」是现象，「具体数字=0」是测量），必须合并——把测量数据写进 `evidence` 字段，不要单独立一条
 4. **依赖链不拆**：若 B 是 A 的依赖（例：ItemList 依赖 Product schema），它们仍是两条独立 finding（修复动作不同），但 severity 应保持一致或 B ≤ A——**禁止** A 标 Critical 而 B 标 Low 这种「前置比后续还轻」的倒挂
 
@@ -162,7 +162,7 @@ AI 的引用决策本质是一次**事实核验**。矛盾的数据比缺失的�
 > 「sameAs=0 + Wikipedia/Wikidata 无词条」标 Critical（修复需 1 小时到 6 个月不等）
 
 ✅ 正确拆分：
-> - 「Organization.sameAs 数组为空」severity Critical（小时级修复，依赖 Organization schema）
+> - 「Organization.sameAs 数组为空」severity High（**有 Organization 时**；小时级修复，依赖 Organization schema；仅全站无 Organization 时才升 Critical）
 > - 「缺第三方平台认领（LinkedIn / YouTube / Crunchbase）」severity High（天级，含平台审核）
 > - 「无 Wikidata / Wikipedia 词条」severity Medium（月级长期，需先积累第三方报道）
 
