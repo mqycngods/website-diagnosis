@@ -60,6 +60,70 @@ def _ok(payload) -> bool:
 _ARTICLE_FAMILY = ("Article", "NewsArticle", "BlogPosting")
 
 
+def _page_schema_types(page: dict) -> tuple:
+    """从单页 structured_data 提取 (可解析类型集合, 损坏类型集合)。
+
+    损坏块是 fetch.py 写入的 __parse_error 占位（带猜测的 @type）。
+    """
+    present, broken = set(), set()
+
+    def walk(o):
+        if isinstance(o, dict):
+            t = o.get("@type")
+            if o.get("__parse_error"):
+                if isinstance(t, str):
+                    broken.add(t)
+                return
+            if isinstance(t, str):
+                present.add(t)
+            elif isinstance(t, list):
+                present.update(x for x in t if isinstance(x, str))
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+
+    if isinstance(page, dict):
+        walk(page.get("structured_data"))
+    return present, broken
+
+
+def _compute_page_schema_status(fetch: dict, articles: dict, pages: dict) -> dict:
+    """按页面组（首页/关于/联系/产品/文章）分别判定实际检出的 Schema 类型。
+
+    schema.json 的 inventory 是全站合并口径（任一页面检出即 Present），
+    「页面 Schema 缺失」视图需要逐组的真实检出，否则首页会错误显示
+    只在文章页/产品页出现的 Organization / WebSite / BreadcrumbList。
+    """
+    found = (pages.get("found") or {}) if isinstance(pages, dict) else {}
+    groups = {
+        "homepage": [fetch] if _ok(fetch) else [],
+        "about": [found["about"]] if isinstance(found.get("about"), dict)
+                 and (found["about"].get("status_code") or 0) < 400 else [],
+        "contact": [found["contact"]] if isinstance(found.get("contact"), dict)
+                   and (found["contact"].get("status_code") or 0) < 400 else [],
+        "product": [p for p in (articles.get("product_pages") or []) if isinstance(p, dict)],
+        "article": [p for p in (articles.get("pages") or []) if isinstance(p, dict)],
+    }
+    out = {}
+    for key, plist in groups.items():
+        present, broken = set(), set()
+        for p in plist:
+            pr, br = _page_schema_types(p)
+            present |= pr
+            broken |= br
+        broken -= present  # 同组内同类型有可解析块时，以可解析为准
+        out[key] = {
+            "sampled": bool(plist),
+            "present": sorted(present),
+            "broken": sorted(broken),
+            "article_family_present": bool(present & set(_ARTICLE_FAMILY)),
+            "article_family_broken": bool(broken & set(_ARTICLE_FAMILY)),
+        }
+    return out
+
+
 def _format_analyzer_evidence(it: dict) -> str:
     """把 issue 转化为通顺的中文自然语言段落，而不是机械拼接字段值。"""
     kind = it.get("kind", "")
@@ -183,6 +247,7 @@ def build_report(work_dir: Path, domain: str, url: str,
         "technical": _load(work_dir, "technical.json"),
         "scores": _load(work_dir, "scores.json"),   # agent 产出（可缺）
         "articles": _load(work_dir, "articles.json"),
+        "pages": _load(work_dir, "pages.json"),
         "signals": _load(work_dir, "signals.json"),
         "issues": _load(work_dir, "issues.json"),
     }
@@ -211,6 +276,12 @@ def build_report_from_dict(data: dict, domain: str, url: str,
 
     # 旧版 schema.json → 三态新格式（Article 家族归并 / Product NotSampled / 电商权重）
     schema = _normalize_schema(schema, fetch)
+    # 逐页 Schema 检出：「页面 Schema 缺失」视图按页面组判定 Present/Missing/Broken，
+    # 不能用 inventory 的全站合并口径（否则首页会错误显示只在子页出现的类型）
+    if _ok(schema):
+        schema = dict(schema)
+        schema["page_groups_status"] = _compute_page_schema_status(
+            fetch, articles, data.get("pages") or {})
 
     # 旧 citability.json 的 preview 尾部带采集端硬加的 "..."——剥掉，截断交给 CSS
     if _ok(citability):

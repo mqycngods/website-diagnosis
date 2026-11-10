@@ -80,12 +80,13 @@
       </summary>
       <div class="view-fold-body">
 
+      {% set pg_status_all = sch.page_groups_status or {} %}
       {% set page_groups = [
-        {"name": "首页", "url": "/", "sampled": true, "types": ["Organization", "WebSite", "BreadcrumbList"]},
-        {"name": "关于页", "url": "/about-us", "sampled": true, "types": ["Organization", "LocalBusiness", "Person"]},
-        {"name": "联系页", "url": "/contact-us", "sampled": true, "types": ["LocalBusiness", "Organization"]},
-        {"name": "产品详情页", "url": "/products/...", "sampled": (sampled.product_pages or 0) > 0, "types": ["Product", "Service", "BreadcrumbList"], "sample_hint": "/products 列表下任一详情页"},
-        {"name": "文章页", "url": "/news/...", "sampled": (sampled.article_pages or 0) > 0, "types": ["Article（含 NewsArticle/BlogPosting）", "Person", "BreadcrumbList"], "sample_hint": "/news 列表下任一文章"}
+        {"key": "homepage", "name": "首页", "url": "/", "sampled": true, "types": ["Organization", "WebSite", "BreadcrumbList"]},
+        {"key": "about", "name": "关于页", "url": "/about-us", "sampled": pg_status_all.get("about", {}).get("sampled", true), "types": ["Organization", "LocalBusiness", "Person"]},
+        {"key": "contact", "name": "联系页", "url": "/contact-us", "sampled": pg_status_all.get("contact", {}).get("sampled", true), "types": ["LocalBusiness", "Organization"]},
+        {"key": "product", "name": "产品详情页", "url": "/products/...", "sampled": (sampled.product_pages or 0) > 0, "types": ["Product", "Service", "BreadcrumbList"], "sample_hint": "/products 列表下任一详情页"},
+        {"key": "article", "name": "文章页", "url": "/news/...", "sampled": (sampled.article_pages or 0) > 0, "types": ["Article（含 NewsArticle/BlogPosting）", "Person", "BreadcrumbList"], "sample_hint": "/news 列表下任一文章"}
       ] %}
 
       {% set inv_map = {} %}
@@ -192,22 +193,27 @@
               </div>
 
               {% if pg.sampled %}
+                {# 按该页面组实际检出的类型判定，不用全站合并口径（pg_status 缺省时回退到全站 inventory，兼容旧数据） #}
+                {% set pg_status = pg_status_all.get(pg.key) %}
                 {% set missing_here = [] %}
-                {% for t in pg.types %}
-                  {% if t in inv_map and inv_map[t].status == "Missing" %}
-                    {% set _ = missing_here.append(inv_map[t]) %}
-                  {% endif %}
-                {% endfor %}
                 {% set present_here = [] %}
-                {% for t in pg.types %}
-                  {% if t in inv_map and inv_map[t].status == "Present" %}
-                    {% set _ = present_here.append(inv_map[t]) %}
-                  {% endif %}
-                {% endfor %}
                 {% set broken_here = [] %}
                 {% for t in pg.types %}
-                  {% if t in inv_map and inv_map[t].status == "Broken" %}
-                    {% set _ = broken_here.append(inv_map[t]) %}
+                  {% if pg_status %}
+                    {% if t == "Article（含 NewsArticle/BlogPosting）" %}
+                      {% set st = "Broken" if pg_status.article_family_broken else ("Present" if pg_status.article_family_present else "Missing") %}
+                    {% else %}
+                      {% set st = "Broken" if t in pg_status.broken else ("Present" if t in pg_status.present else "Missing") %}
+                    {% endif %}
+                  {% else %}
+                    {% set st = inv_map[t].status if t in inv_map else "Missing" %}
+                  {% endif %}
+                  {% if st == "Broken" %}
+                    {% set _ = broken_here.append(inv_map[t] if t in inv_map else {"schema_type": t, "impact": "Critical"}) %}
+                  {% elif st == "Present" %}
+                    {% set _ = present_here.append(inv_map[t] if t in inv_map else {"schema_type": t, "impact": "Low"}) %}
+                  {% else %}
+                    {% set _ = missing_here.append(inv_map[t] if t in inv_map else {"schema_type": t, "impact": "Medium"}) %}
                   {% endif %}
                 {% endfor %}
 
