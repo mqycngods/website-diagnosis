@@ -48,7 +48,6 @@ from pydantic import BaseModel
 from diagnose import pipeline
 from render.build import build_report_from_dict
 from render.html import render_html_string
-from render.markdown import render_markdown
 
 app = FastAPI(
     title="site-diagnosis-zh API",
@@ -173,11 +172,11 @@ def _base_url(request: Request) -> str:
 
 
 def _save_report_files(domain: str, report, html_str: str, plan_md: str = "") -> dict:
-    """把 HTML / Markdown / 原始数据落盘到 results/<domain>-<ts>/。
+    """把 HTML / 执行清单 Markdown / 原始数据落盘到 results/<domain>-<ts>/。
 
-    plan_md（GEO 执行清单 Markdown）非空时单独落盘 <safe>-geo-plan.md，
-    返回的 md_name 指向清单文件（md_url 即清单在线链接）；否则 md_name
-    仍是诊断报告 md。
+    不再落盘渲染器生成的诊断报告 md：md 文件只有执行清单
+    <safe>-geo-plan.md（plan_md 为空时不落盘，md_name 为 None，
+    md_url 返回 None）。
     """
     safe = _NAME_SAFE.sub("_", domain) or "site"
     dir_name = f"{safe}-{time.strftime('%Y%m%d-%H%M%S')}"
@@ -185,13 +184,11 @@ def _save_report_files(domain: str, report, html_str: str, plan_md: str = "") ->
     out_dir.mkdir(parents=True, exist_ok=True)
 
     html_name = f"{safe}-geo-report.html"
-    md_name = f"{safe}-geo-report.md"
     (out_dir / html_name).write_text(html_str, encoding="utf-8")
-    render_markdown(report, out_dir / md_name)
+    md_name = None
     if plan_md.strip():
-        plan_name = f"{safe}-geo-plan.md"
-        (out_dir / plan_name).write_text(plan_md, encoding="utf-8")
-        md_name = plan_name
+        md_name = f"{safe}-geo-plan.md"
+        (out_dir / md_name).write_text(plan_md, encoding="utf-8")
     (out_dir / "report-data.json").write_text(
         json.dumps(report.to_dict(), ensure_ascii=False, default=str), encoding="utf-8")
     return {"dir_name": dir_name, "html_name": html_name, "md_name": md_name}
@@ -308,13 +305,12 @@ async def render(request: Request, _key: str = Depends(require_api_key)):
 
     传 run_id 时所有大字段从暂存取，body 只需 {run_id, scores}。
     scores 可缺省/格式不合法——缺省时渲染器用确定性数据生成兜底发现。
-    plan_md 可缺省：传了 GEO 执行清单 Markdown 时，服务端把它落盘为
-    <domain>-geo-plan.md，且 md_url 指向该清单链接；缺省则 md_url 仍是
-    诊断报告 md。
+    plan_md 为 GEO 执行清单 Markdown：落盘为 <domain>-geo-plan.md，
+    md_url 即该清单的在线链接；缺省时 md_url 为 None（不再落盘诊断报告 md）。
 
     返回 {success, html, size, domain, url, filename, result_dir,
           report_path, report_url, md_path, md_url, is_fallback, error}。
-    report_url 可直接浏览器打开，md_url 是 Markdown 纯文本预览。
+    report_url 可直接浏览器打开，md_url 是执行清单 Markdown 在线链接（未传 plan_md 时为 None）。
     """
     body = _parse_body(await request.body())
     run_id = str(body.get("run_id") or "").strip()
@@ -375,8 +371,8 @@ async def render(request: Request, _key: str = Depends(require_api_key)):
             "result_dir": f"results/{saved['dir_name']}",
             "report_path": f"{prefix}/{saved['html_name']}",
             "report_url": f"{base}{prefix}/{saved['html_name']}",
-            "md_path": f"{prefix}/{saved['md_name']}",
-            "md_url": f"{base}{prefix}/{saved['md_name']}",
+            "md_path": f"{prefix}/{saved['md_name']}" if saved["md_name"] else None,
+            "md_url": f"{base}{prefix}/{saved['md_name']}" if saved["md_name"] else None,
             "is_fallback": False,
             "error": None,
         }
