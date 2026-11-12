@@ -172,8 +172,13 @@ def _base_url(request: Request) -> str:
     return f"{proto}://{host}"
 
 
-def _save_report_files(domain: str, report, html_str: str) -> dict:
-    """把 HTML / Markdown / 原始数据落盘到 results/<domain>-<ts>/。"""
+def _save_report_files(domain: str, report, html_str: str, plan_md: str = "") -> dict:
+    """把 HTML / Markdown / 原始数据落盘到 results/<domain>-<ts>/。
+
+    plan_md（GEO 执行清单 Markdown）非空时单独落盘 <safe>-geo-plan.md，
+    返回的 md_name 指向清单文件（md_url 即清单在线链接）；否则 md_name
+    仍是诊断报告 md。
+    """
     safe = _NAME_SAFE.sub("_", domain) or "site"
     dir_name = f"{safe}-{time.strftime('%Y%m%d-%H%M%S')}"
     out_dir = RESULTS_DIR / dir_name
@@ -183,6 +188,10 @@ def _save_report_files(domain: str, report, html_str: str) -> dict:
     md_name = f"{safe}-geo-report.md"
     (out_dir / html_name).write_text(html_str, encoding="utf-8")
     render_markdown(report, out_dir / md_name)
+    if plan_md.strip():
+        plan_name = f"{safe}-geo-plan.md"
+        (out_dir / plan_name).write_text(plan_md, encoding="utf-8")
+        md_name = plan_name
     (out_dir / "report-data.json").write_text(
         json.dumps(report.to_dict(), ensure_ascii=False, default=str), encoding="utf-8")
     return {"dir_name": dir_name, "html_name": html_name, "md_name": md_name}
@@ -299,6 +308,9 @@ async def render(request: Request, _key: str = Depends(require_api_key)):
 
     传 run_id 时所有大字段从暂存取，body 只需 {run_id, scores}。
     scores 可缺省/格式不合法——缺省时渲染器用确定性数据生成兜底发现。
+    plan_md 可缺省：传了 GEO 执行清单 Markdown 时，服务端把它落盘为
+    <domain>-geo-plan.md，且 md_url 指向该清单链接；缺省则 md_url 仍是
+    诊断报告 md。
 
     返回 {success, html, size, domain, url, filename, result_dir,
           report_path, report_url, md_path, md_url, is_fallback, error}。
@@ -307,6 +319,7 @@ async def render(request: Request, _key: str = Depends(require_api_key)):
     body = _parse_body(await request.body())
     run_id = str(body.get("run_id") or "").strip()
     scores = _as_json(body.get("scores")) or {}
+    plan_md = str(body.get("plan_md") or "")
     offline = bool(body.get("offline", False))
 
     if run_id:
@@ -349,7 +362,7 @@ async def render(request: Request, _key: str = Depends(require_api_key)):
     try:
         report = await run_in_threadpool(build_report_from_dict, data, domain, url)
         html_str = await run_in_threadpool(render_html_string, report, offline)
-        saved = _save_report_files(domain, report, html_str)
+        saved = _save_report_files(domain, report, html_str, plan_md)
         base = _base_url(request)
         prefix = f"/results/{saved['dir_name']}"
         return {
