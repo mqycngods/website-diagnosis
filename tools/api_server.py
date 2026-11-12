@@ -82,11 +82,43 @@ async def require_api_key(key: str = Security(_api_key_header)):
 
 
 # ── 原始 body 分层兜底解析 ───────────────────────────────────
+def _loose_extract(text: str) -> dict:
+    """最后一层救援：body 因变量原样替换（Markdown 真实换行/未转义引号）
+    变成非法 JSON 时，按已知键名切片提取标量值。
+
+    模板键序固定（run_id, url, scores, plan_md），plan_md 总是最后一个
+    键，其值直接截到结尾 '}';其他键值截到下一个已知键出现处。
+    scores 等对象值截断后由 _as_json 再尝试解析,失败按缺省处理。
+    """
+    keys = ("run_id", "url", "scores", "plan_md", "articles", "products",
+            "agent_picks", "domain", "offline", "inputs")
+    hits = []
+    for k in keys:
+        m = re.search(rf'"{k}"\s*:\s*', text)
+        if m:
+            hits.append((m.start(), k, m.end()))
+    hits.sort()
+    out = {}
+    for idx, (_, key, val_start) in enumerate(hits):
+        if idx + 1 < len(hits):
+            val = text[val_start:hits[idx + 1][0]]
+        else:
+            val = text[val_start:text.rfind("}") if "}" in text else len(text)]
+        val = val.strip().rstrip(",").strip()
+        if val.startswith('"'):
+            j = val.rfind('"')
+            val = val[1:j] if j > 0 else val.strip('"')
+            val = val.replace('\\"', '"').replace("\\n", "\n").replace("\\\\", "\\")
+        out[key] = val
+    return out
+
+
 def _parse_body(raw: bytes) -> dict:
     """平台模板拼出的 body 可能不是合法 JSON（单引号 dict、变量为空等）。
 
     分层兜底：json.loads → ast.literal_eval（单引号 Python dict）→
-    单引号换双引号再试 → 全失败返回 {}，绝不 422 json_invalid。
+    单引号换双引号再试 → 按键名粗提取（Markdown 未转义场景）→ {}，
+    绝不 422 json_invalid。
     """
     text = raw.decode("utf-8", errors="replace").strip()
     if not text:
@@ -104,7 +136,8 @@ def _parse_body(raw: bytes) -> dict:
     try:
         return json.loads(text.replace("'", '"'))
     except Exception:
-        return {}
+        pass
+    return _loose_extract(text)
 
 
 def _as_json(x: Any) -> Any:
@@ -352,6 +385,13 @@ async def render(request: Request, _key: str = Depends(require_api_key)):
 
     domain = str(body.get("domain") or "") or \
         urlparse(url).netloc.replace("www.", "").replace(":", "_") or "site"
+    if not url.strip():
+        # 平台 {{var}} 全空时之前会渲染出 site-geo-report.html 垃圾报告，
+        # agent 还会把假链接写进最终输出。直接报错让上游发现参数映射问题。
+        raise HTTPException(
+            status_code=400,
+            detail="render 缺少 url（run_id 未命中或变量为空）——请检查平台工具的参数映射与请求体",
+        )
     safe_domain = _NAME_SAFE.sub("_", domain) or "site"
     filename = f"{safe_domain}_geo_report.html"
 
