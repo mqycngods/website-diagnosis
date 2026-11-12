@@ -284,7 +284,9 @@ async def analyze(request: Request, _key: str = Depends(require_api_key)):
     """纯计算：signals + analyzers + baseline_scores + brand。
 
     传 run_id 时所有大字段从暂存取；返回 {issues, signals_summary,
-    baseline_scores, brand}，并已写回暂存供 /render 使用。
+    baseline_scores, brand, p0_blockers}，并已写回暂存供 /render 使用。
+    p0_blockers 是 P0 阻塞的确定性判定（diagnose/blockers.py），报告横幅与
+    执行清单前置判定都以它为准（规则同源）。
     """
     body = _parse_body(await request.body())
     run_id = str(body.get("run_id") or "").strip()
@@ -326,6 +328,7 @@ async def analyze(request: Request, _key: str = Depends(require_api_key)):
             "issues": result.get("issues"),
             "signals_summary": result.get("signals_summary"),
             "baseline_scores": result.get("baseline_scores"),
+            "p0_blockers": result.get("p0_blockers"),
         })
         _store_put(run_id, stored)
     return result
@@ -366,6 +369,7 @@ async def render(request: Request, _key: str = Depends(require_api_key)):
             "articles": stored.get("articles") or {},
             "signals": stored.get("signals_summary") or {},
             "issues": stored.get("issues") or {},
+            "p0_blockers": stored.get("p0_blockers"),
         }
     else:
         url = body.get("url", "")
@@ -381,6 +385,7 @@ async def render(request: Request, _key: str = Depends(require_api_key)):
             "articles": _as_json(body.get("articles")) or {},
             "signals": _as_json(body.get("signals_summary")) or {},
             "issues": _as_json(body.get("issues")) or {},
+            "p0_blockers": _as_json(body.get("p0_blockers")),
         }
 
     domain = str(body.get("domain") or "") or \

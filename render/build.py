@@ -510,6 +510,8 @@ def build_report_from_dict(data: dict, domain: str, url: str,
         "quick_wins": [asdict(a) for a in quick],
         "medium_term": [asdict(a) for a in medium],
         "strategic": [asdict(a) for a in strat],
+        # P0 阻塞判定（规则同源）：analyze 阶段确定性算出；None 表示旧数据，走 Critical 兜底
+        "p0_blockers": data.get("p0_blockers"),
     }
 
     # 调用 RecommendationEngine 生成客户报告数据
@@ -554,12 +556,16 @@ def build_report_from_dict(data: dict, domain: str, url: str,
         # report_builder 失败时降级：使用基础数据
         print(f"[build] ⚠️ report_builder 失败：{e}，使用降级数据", file=sys.stderr)
         # 降级路径同样给出 P0 前置修改判定，保证报告/清单总结区不空。
-        p0_count = sum(1 for f in findings if getattr(f, "severity", "") == "Critical")
-        if p0_count > 0:
-            p0_note = (f"当前官网不可直接 GEO 优化，包含 {p0_count} 项 P0 级任务需修改后进行；"
-                       "在这些问题修复之前，其余优化动作难以生效。")
+        # 优先读 analyze 阶段算好的 p0_blockers（规则同源），旧数据回退到 Critical 计数。
+        from diagnose.blockers import p0_blocking_note as _p0_note
+        _blockers = data.get("p0_blockers")
+        if isinstance(_blockers, list):
+            p0_note = _p0_note(_blockers)
         else:
-            p0_note = "可进行 GEO 优化，以下内容可慢慢调整。"
+            p0_count = sum(1 for f in findings if getattr(f, "severity", "") == "Critical")
+            p0_note = _p0_note(None) if p0_count == 0 else (
+                f"当前官网不可直接 GEO 优化，包含 {p0_count} 项 P0 级任务需修改后进行；"
+                "在这些问题修复之前，其余优化动作难以生效。")
         executive_summary = ExecutiveSummary(
             geo_score=geo, label=label, label_zh=ZH_LABEL.get(label, label),
             overall_assessment=scores.get("description", "") if _ok(scores) else "",

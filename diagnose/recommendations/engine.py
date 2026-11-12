@@ -158,7 +158,8 @@ def build_client_report_data(
 
     # 构建 Executive Summary
     report.executive_summary = _build_executive_summary(
-        geo_score, label, label_zh, findings, scores, quick_wins
+        geo_score, label, label_zh, findings, scores, quick_wins,
+        p0_blockers=diagnostics.get("p0_blockers"),
     )
 
     # 构建页面级建议
@@ -191,6 +192,7 @@ def _build_executive_summary(
     findings: list,
     scores: dict,
     quick_wins: list,
+    p0_blockers: "list | None" = None,
 ) -> ExecutiveSummary:
     """构建执行摘要"""
     # 从 scores.json 获取整体评估
@@ -219,16 +221,19 @@ def _build_executive_summary(
     # 推荐下一步
     recommended_next_step = _derive_next_step(findings, quick_wins)
 
-    # P0 前置修改判定：severity=Critical 的 finding 即 P0（阻塞 GEO 基础能力）。
-    # 在「核心判断 / 行动清单」两侧都需要明确告知客户是否存在必须前置修复的项。
-    p0_count = sum(1 for f in findings if f.get("severity") == "Critical")
-    if p0_count > 0:
-        p0_blocking_note = (
-            f"当前官网不可直接 GEO 优化，包含 {p0_count} 项 P0 级任务需修改后进行；"
-            "在这些问题修复之前，其余优化动作难以生效。"
-        )
+    # P0 前置修改判定（规则同源）：优先读 analyze 阶段确定性算出的 p0_blockers
+    # （diagnose/blockers.py），报告横幅与执行清单前置判定同源一致；
+    # p0_blockers 为 None（旧数据/未跑 analyze）时回退到 Critical finding 计数。
+    from diagnose.blockers import p0_blocking_note as _p0_note
+    if p0_blockers is not None:
+        note = _p0_note(p0_blockers if isinstance(p0_blockers, list) else [])
     else:
-        p0_blocking_note = "可进行 GEO 优化，以下内容可慢慢调整。"
+        p0_count = sum(1 for f in findings if f.get("severity") == "Critical")
+        if p0_count > 0:
+            note = (f"当前官网不可直接 GEO 优化，包含 {p0_count} 项 P0 级任务需修改后进行；"
+                    "在这些问题修复之前，其余优化动作难以生效。")
+        else:
+            note = _p0_note([])
 
     return ExecutiveSummary(
         geo_score=geo_score,
@@ -237,7 +242,7 @@ def _build_executive_summary(
         overall_assessment=description,
         top_priorities=top_priorities,
         recommended_next_step=recommended_next_step,
-        p0_blocking_note=p0_blocking_note,
+        p0_blocking_note=note,
     )
 
 

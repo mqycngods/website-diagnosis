@@ -297,6 +297,15 @@ def analyze(fetch_page: dict, articles: dict, pages_audit: dict,
     out["issues"] = issues
     out["signals_summary"] = _summarize_signals(signals)
 
+    # P0 阻塞判定（规则同源的唯一来源：报告横幅/执行清单/评分对齐都消费它）
+    try:
+        from .blockers import compute_p0_blockers
+        out["p0_blockers"] = compute_p0_blockers(
+            fetch=fetch_page, bots=bots or {}, schema=schema,
+            issues=issues, articles=articles)
+    except Exception as e:
+        out["p0_blockers"] = _err(f"阻塞判定失败：{e}")
+
     # 确定性 baseline（全量五维）
     try:
         from .scoring.engine import compute_baselines
