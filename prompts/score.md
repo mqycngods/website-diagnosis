@@ -176,6 +176,7 @@ AI 的引用决策本质是一次**事实核验**。矛盾的数据比缺失的�
 3. **发现归并到正确层级**：跨页面复现的问题写 domain/template 层，不逐 URL 罗列。
 4. **未测量的项写"未测量"**，不猜值。
 5. quick_wins ≤ 4 小时可完成；medium_term 1-5 天；strategic 数周持续投入。
+5.1 **行动不重复**：同一修复动作（同根因、同对象）在 quick_wins / medium_term / strategic 三个数组中**只出现一次**，选最贴合耗时的一档；禁止「补 Organization schema」同时出现在 quick_wins 和 medium_term 这类跨数组重复，也禁止同数组内换措辞重复。
 6. 修复建议要具体到可执行（"在 Cloudflare 白名单放行 GPTBot"，不是"优化爬虫配置"）。
 6.1 **sameAs 评分边界**：sameAs 完整性仅对 Organization 强制（品牌实体对齐外部账号是品牌权威的核心信号）。对 Person：仅当作者是公开身份的外部专家/记者/行业 KOL（有 LinkedIn/Twitter/个人主页/Wikipedia 等真实可验证锚点）时才评分 sameAs；若作者为企业内部编辑/内容团队/匿名笔名/AI 生成占位名（无公开社交足迹），**不评分、不写 finding**——硬造 sameAs 反而会被 AI 反作弊判定为虚假身份。此时更合理的建议是把 `Article.author` 改为 `@type: Organization`（品牌作为发布者）或「编辑团队」实体。
 7. **每个维度的 `note` 必填且 ≤120 字**——雷达图 tooltip 与「各维度得分理由」折叠面板都依赖这个字段。note 应说明：得分依据的关键实测值 + 主要扣分点。例：「首页 6 段 3F/2D，统计密度与独家信号几乎全为 0，无任何段落达到可直接引用标准」。空 note 会让报告该维度显示"未提供评分理由"。

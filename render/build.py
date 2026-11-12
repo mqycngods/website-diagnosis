@@ -384,6 +384,26 @@ def build_report_from_dict(data: dict, domain: str, url: str,
     medium = [az(Action(**a)) for a in (scores.get("medium_term", []) if _ok(scores) else []) if isinstance(a, dict)]
     strat = [az(Action(**a)) for a in (scores.get("strategic", []) if _ok(scores) else []) if isinstance(a, dict)]
 
+    def _dedupe_actions(lists: list[list[Action]]) -> None:
+        """跨数组按动作文本去重（就地）：LLM 常把同根因动作写进多个数组。
+
+        key = 动作文本归一化（去空白/标点、小写）前 60 字；空文本不去重。
+        quick_wins → medium_term → strategic 顺序保留首次出现。
+        """
+        seen: set[str] = set()
+        for lst in lists:
+            kept: list[Action] = []
+            for a in lst:
+                key = re.sub(r"[\s\-—·,，。、:：;；()（）\[\]【】\"'\"'“”]+", "", (a.action or "").lower())[:60]
+                if key and key in seen:
+                    continue
+                if key:
+                    seen.add(key)
+                kept.append(a)
+            lst[:] = kept
+
+    _dedupe_actions([quick, medium, strat])
+
     # verdict / bot_class 中文伴生（注入到 bots dict 供模板）
     if _ok(bots):
         bots["verdict_zh"] = ZH_VERDICT.get(bots.get("verdict", ""), bots.get("verdict", ""))
