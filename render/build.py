@@ -350,12 +350,61 @@ def build_report_from_dict(data: dict, domain: str, url: str,
             severity=f.get("severity", "Medium"), layer=f.get("layer", ""),
         ))
 
-    # 2. 通用分析器的 issues（去重：若 agent 已经写了类似标题，跳过）
+    # 2. 通用分析器的 issues（去重：若 agent 已经写了同根因条目，跳过）
+    # 概念抽取：把同义措辞归一到同一概念桶（organization/实体/@id → entity，
+    # 结构化数据/JSON-LD/schema → schema …），再按「分析器主概念是否已被
+    # agent 覆盖 + 极性一致」判重。字面相似度对跨措辞重复（如「主页缺
+    # Organization schema」vs「首页无任何结构化数据…品牌实体没有稳定 @id」）
+    # 无效，概念级判重才能拦住。
+    _CONCEPTS: list[tuple[str, str]] = [
+        ("faq", r"faq"),
+        ("og", r"og:|open ?graph"),
+        ("canonical", r"canonical"),
+        ("h1", r"\bh1\b"),
+        ("sameas", r"sameas"),
+        ("description", r"description"),
+        ("author", r"author|作者"),
+        ("sitemap", r"sitemap"),
+        ("robots", r"robots"),
+        ("llms", r"llms"),
+        ("entity", r"organization|实体|@id"),
+        ("schema", r"schema|json-?ld|结构化"),
+        ("citability", r"可引用|citability"),
+    ]
+
+    def _concepts(text: str) -> set[str]:
+        low = (text or "").lower()
+        return {name for name, pat in _CONCEPTS if re.search(pat, low)}
+
+    def _primary_concept(text: str) -> str | None:
+        low = (text or "").lower()
+        for name, pat in _CONCEPTS:
+            if re.search(pat, low):
+                return name
+        return None
+
+    _NEG = re.compile(r"缺|无|未|没|为零|为空|不足|missing|零")
+    _POS = re.compile(r"过于通用|重复|冲突|多套|多余|错误|不一致|矛盾|抄用")
+
+    def _polarity(text: str) -> str | None:
+        t = text or ""
+        if _POS.search(t):
+            return "pos"
+        if _NEG.search(t):
+            return "neg"
+        return None
+
+    agent_concepts = [(t, _concepts(t), _polarity(t)) for t in agent_titles]
     analyzer_findings = _issues_to_findings(issues)
     for af in analyzer_findings:
         t = af.get("title", "")
-        # 简单去重：如果 agent 已有相似标题则不重复追加
-        if not any(t[:8] in at for at in agent_titles):
+        p = _primary_concept(t)
+        pol = _polarity(t)
+        is_dup = bool(p) and any(
+            p in aconcepts and (pol is None or apol is None or pol == apol)
+            for _, aconcepts, apol in agent_concepts
+        )
+        if not is_dup:
             findings.append(Finding(
                 title=t, evidence=af.get("evidence", ""),
                 impact=af.get("impact", ""), fix=af.get("fix", ""),
