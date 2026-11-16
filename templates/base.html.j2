@@ -654,8 +654,7 @@ span.hint-icon:hover{color:var(--orange);border-color:var(--orange)}
 })();
 </script>
 
-<script type="application/json" id="report-data">{{ report_json | safe }}</script>
-<script type="application/json" id="chart-data">{{ chart_json | safe }}</script>
+<script>window.__CHART_DATA__ = {{ chart_json | safe }};</script>
 {% include "sections/charts_js.html.j2" %}
 
 </body>

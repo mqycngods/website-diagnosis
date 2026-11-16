@@ -1,7 +1,7 @@
 <script>
 (function () {
   if (typeof echarts === "undefined") return;
-  var D = JSON.parse(document.getElementById("chart-data").textContent || "{}");
+  var D = window.__CHART_DATA__ || {};
   var C = D.colors || {};
   var charts = [];
   function init(id, option) {
