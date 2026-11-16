@@ -204,14 +204,10 @@ def main(run_id, scores_json, biz_api_base, geo_api_token):
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
     return {"ok": False, "error": f"重试 3 次仍失败: {last_error}"}'''
 
-# render 节点不走 _http_node：它要额外处理「边缘 WAF 误拦」。
-# 服务端 diagnosis_render 在 body 带 "encoding": "base64" 时按 Base64 解码
-# scores / plan_md，所以**一律先发 Base64**——正文里出现 "../etc/passwd" 这类
-# 目录穿越串时，明文请求会被 Render 边缘 WAF 在到达服务前拦掉（HTTP 403）。
-# 服务端若是旧版本（不认识 encoding），Base64 会被当成乱码导致渲染异常，
-# 此时回落明文再试一次，保证对旧服务端兼容。
-NODE11_CODE = '''import base64
-import json
+# render 节点不走 _http_node：它要识别「边缘 WAF 误拦」并把失败说清楚。
+# WAF 在服务之前，被拦时重试同样的请求体没有意义——节点只做判定与上报，
+# 由 agent 在最终输出里如实写「报告渲染失败：请求被平台 WAF 拦截」。
+NODE11_CODE = '''import json
 import requests
 import time
 
@@ -231,55 +227,12 @@ def _waf_blocked(resp):
     return "web application firewall" in body or "blocked by this site" in body
 
 
-def _b64_payload(payload):
-    """把 scores / plan_md 转成 Base64 并声明 encoding，规避 WAF 内容匹配。"""
-    enc = dict(payload)
-    for key in ("scores", "plan_md"):
-        val = enc.get(key)
-        if not isinstance(val, str):
-            val = json.dumps(val, ensure_ascii=False) if val is not None else ""
-        enc[key] = base64.b64encode(val.encode("utf-8")).decode("ascii")
-    enc["encoding"] = "base64"
-    return enc
-
-
 def _ok_result(d):
     return {"ok": True, "error": "", "geo_score": d.get("geo_score", 0),
             "label_zh": d.get("label_zh", ""), "report_html": d.get("report_html", ""),
             "report_markdown": d.get("report_markdown", ""),
             "download_url_html": d.get("download_url_html", ""),
             "download_url_md": d.get("download_url_md", "")}
-
-
-def _parse(resp, empty):
-    """解析业务响应。返回 (已解析, 结果)。解析失败表示服务端没按编码处理。"""
-    try:
-        result = resp.json()
-    except Exception:
-        return False, None
-    if not result.get("ok"):
-        empty["error"] = result.get("error", "unknown")
-        return True, dict(empty)
-    return True, _ok_result(result.get("data", {}))
-
-
-def _post(endpoint, headers, payload, timeout, empty):
-    """先发 Base64；WAF 拦截或服务端不认编码时，回落明文各试一次。"""
-    resp = requests.post(endpoint, json=_b64_payload(payload),
-                         headers=headers, timeout=timeout)
-    if not _waf_blocked(resp):
-        parsed, out = _parse(resp, empty)
-        if parsed:
-            return out
-    # 旧服务端把 Base64 当明文渲染（会失败）或直接被 WAF 拦——回落明文
-    plain = {k: v for k, v in payload.items() if k != "encoding"}
-    resp = requests.post(endpoint, json=plain, headers=headers, timeout=timeout)
-    if _waf_blocked(resp):
-        raise RuntimeError("请求被边缘 WAF 拦截（Base64 与明文均被拦）")
-    parsed, out = _parse(resp, empty)
-    if not parsed:
-        raise RuntimeError("响应无法解析为 JSON（HTTP %s）" % resp.status_code)
-    return out
 
 
 def main(run_id, url, domain, scores, plan_md, biz_api_base, geo_api_token):
@@ -293,7 +246,16 @@ def main(run_id, url, domain, scores, plan_md, biz_api_base, geo_api_token):
     last_error = ""
     for attempt in range(3):
         try:
-            return _post(endpoint, headers, payload, 120, empty)
+            resp = requests.post(endpoint, json=payload, headers=headers, timeout=120)
+            if _waf_blocked(resp):
+                # WAF 在服务之前，重试同一个请求体没有意义——直接上报
+                empty["error"] = "请求被平台边缘 WAF 拦截（HTTP 403），请如实标注报告渲染失败"
+                return empty
+            result = resp.json()
+            if not result.get("ok"):
+                empty["error"] = result.get("error", "unknown")
+                return empty
+            return _ok_result(result.get("data", {}))
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
             last_error = f"attempt {attempt+1}/3: {type(e).__name__}: {e}"
             if attempt < 2:

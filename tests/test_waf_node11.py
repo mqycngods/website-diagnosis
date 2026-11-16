@@ -1,7 +1,8 @@
-"""验证 Dify render 节点里的 WAF 识别逻辑（NODE11_CODE）。
+"""验证 Dify render 节点（NODE11_CODE）的 WAF 识别与上报逻辑。
 
-节点代码是平台执行的 Python 源码字符串，这里把它抽出来单独跑，
-锁住「什么情况算 WAF 拦截」这个判断——判错了要么白重试要么掩盖真错误。
+节点代码是平台执行的 Python 源码字符串，这里把它抽出来单独跑。锁住两件事：
+1. 什么情况算 WAF 拦截（判错会掩盖真错误，或对正常响应误报失败）
+2. 被 WAF 拦时不重试、如实上报（WAF 在服务之前，重试没意义）
 """
 from __future__ import annotations
 
@@ -16,22 +17,29 @@ _GEN = _ROOT / "dify-site-diagnosis-zh" / "generate_dsl.py"
 
 @pytest.fixture(scope="module")
 def node_module():
-    """执行 generate_dsl 里 NODE11_CODE 定义的 _waf_blocked / _encode_payload。"""
+    """执行 generate_dsl 里 NODE11_CODE 定义的所有函数。"""
     src = _GEN.read_text(encoding="utf-8")
     m = re.search(r"^NODE11_CODE = '''(.*?)'''$", src, re.S | re.M)
     assert m, "未在 generate_dsl.py 中找到 NODE11_CODE"
-    code = m.group(1)
     ns = {"__name__": "node11"}
-    exec(compile(code, "NODE11_CODE", "exec"), ns)
+    exec(compile(m.group(1), "NODE11_CODE", "exec"), ns)
     return ns
 
 
 class FakeResp:
-    def __init__(self, status_code, content_type, text=""):
+    def __init__(self, status_code, content_type, payload):
         self.status_code = status_code
         self.headers = {"Content-Type": content_type}
-        self.text = text
+        self._payload = payload
+        self.text = payload if isinstance(payload, str) else ""
 
+    def json(self):
+        if isinstance(self._payload, dict):
+            return self._payload
+        raise ValueError("not json")
+
+
+# ── WAF 识别 ─────────────────────────────────────────────────
 
 def test_waf_blocked_html_403(node_module):
     """Render WAF 拦截页：403 + text/html。"""
@@ -40,13 +48,13 @@ def test_waf_blocked_html_403(node_module):
 
 
 def test_waf_blocked_json_403_is_not_waf(node_module):
-    """业务侧的 403 是 JSON —— 不该被当 WAF 误判后重试。"""
+    """业务侧的 403 是 JSON —— 不该被当 WAF 误判。"""
     r = FakeResp(403, "application/json", '{"ok": false, "error": "forbidden"}')
     assert node_module["_waf_blocked"](r) is False
 
 
 def test_waf_blocked_401_not_treated_as_waf(node_module):
-    """鉴权失败（401）与 WAF 无关，不能触发 Base64 重试。"""
+    """鉴权失败（401）与 WAF 无关。"""
     r = FakeResp(401, "application/json", '{"detail": "invalid key"}')
     assert node_module["_waf_blocked"](r) is False
 
@@ -57,49 +65,12 @@ def test_waf_blocked_200_not_waf(node_module):
 
 
 def test_waf_blocked_detects_body_signature(node_module):
-    """偶尔 Content-Type 缺失，靠正文特征仍能识别。"""
+    """Content-Type 缺失时，靠正文特征仍能识别。"""
     r = FakeResp(403, "", "Your request was blocked by this site's web application firewall (WAF).")
     assert node_module["_waf_blocked"](r) is True
 
 
-def test_b64_payload_marks_encoding(node_module):
-    import base64
-    payload = {
-        "run_id": "r1", "url": "https://x.com",
-        "scores": '{"a": 1}',
-        "plan_md": "检查 ../../etc/passwd",
-    }
-    enc = node_module["_b64_payload"](payload)
-    assert enc["encoding"] == "base64"
-    assert base64.b64decode(enc["plan_md"]).decode() == "检查 ../../etc/passwd"
-    assert base64.b64decode(enc["scores"]).decode() == '{"a": 1}'
-    # 编码后请求体里不再有 WAF 特征串
-    import json
-    assert "../../etc/passwd" not in json.dumps(enc, ensure_ascii=False)
-
-
-def test_b64_payload_keeps_other_fields(node_module):
-    payload = {"run_id": "r1", "url": "https://x.com", "domain": "x.com",
-               "scores": "{}", "plan_md": ""}
-    enc = node_module["_b64_payload"](payload)
-    assert enc["run_id"] == "r1" and enc["url"] == "https://x.com"
-    assert enc["domain"] == "x.com"
-
-
-# ── 请求顺序：一律先发 Base64 ────────────────────────────────
-
-class _FakeResp:
-    def __init__(self, status, ctype, payload):
-        self.status_code = status
-        self.headers = {"Content-Type": ctype}
-        self._payload = payload
-        self.text = payload if isinstance(payload, str) else ""
-
-    def json(self):
-        if isinstance(self._payload, dict):
-            return self._payload
-        raise ValueError("not json")
-
+# ── 不重试、如实上报 ─────────────────────────────────────────
 
 def _fake_requests(responses, sent):
     class FakeExceptions:
@@ -119,48 +90,49 @@ def _fake_requests(responses, sent):
     return FakeRequests
 
 
-_OK = {"ok": True, "data": {"geo_score": 42, "label_zh": "中等",
-                            "report_html": "<html>", "report_markdown": "md",
-                            "download_url_html": "h", "download_url_md": "m"}}
-_EMPTY = {"ok": False, "error": "", "geo_score": 0, "label_zh": "", "report_html": "",
-          "report_markdown": "", "download_url_html": "", "download_url_md": ""}
-_PAYLOAD = {"run_id": "r1", "url": "https://x.com", "domain": "x.com",
-            "scores": "{}", "plan_md": "检查 ../../etc/passwd"}
+_OK_DATA = {"geo_score": 42, "label_zh": "中等", "report_html": "<html>",
+            "report_markdown": "md", "download_url_html": "h", "download_url_md": "m"}
+
+_ARGS = ("r1", "https://x.com", "x.com", '{"a": 1}', "# 计划", "https://api", "tok")
 
 
-def test_post_sends_base64_first_and_only_once(node_module):
-    """服务端支持编码：只发一次，且首发即 Base64、不含明文穿越串。"""
-    import json
-    sent, responses = [], [_FakeResp(200, "application/json", _OK)]
-    node_module["requests"] = _fake_requests(responses, sent)
-    out = node_module["_post"]("ep", {}, _PAYLOAD, 10, dict(_EMPTY))
+def test_main_success(node_module):
+    sent = []
+    node_module["requests"] = _fake_requests(
+        [FakeResp(200, "application/json", {"ok": True, "data": _OK_DATA})], sent)
+    out = node_module["main"](*_ARGS)
+    assert out["ok"] is True
+    assert out["geo_score"] == 42
     assert len(sent) == 1
-    assert sent[0]["encoding"] == "base64"
-    assert "../../etc/passwd" not in json.dumps(sent[0], ensure_ascii=False)
-    assert out["geo_score"] == 42
 
 
-def test_post_falls_back_to_plaintext_for_old_server(node_module):
-    """旧服务端把 Base64 当明文（响应非 JSON）→ 回落明文重试一次。"""
-    sent, responses = [], [
-        _FakeResp(200, "text/html", "<html>渲染失败</html>"),
-        _FakeResp(200, "application/json", _OK),
-    ]
-    node_module["requests"] = _fake_requests(responses, sent)
-    out = node_module["_post"]("ep", {}, _PAYLOAD, 10, dict(_EMPTY))
-    assert len(sent) == 2
-    assert "encoding" not in sent[1]
-    assert out["geo_score"] == 42
+def test_main_sends_plaintext_json(node_module):
+    """请求体是明文 JSON，不做任何编码。"""
+    sent = []
+    node_module["requests"] = _fake_requests(
+        [FakeResp(200, "application/json", {"ok": True, "data": _OK_DATA})], sent)
+    node_module["main"](*_ARGS)
+    assert sent[0]["scores"] == '{"a": 1}'
+    assert sent[0]["plan_md"] == "# 计划"
+    assert "encoding" not in sent[0]
 
 
-def test_post_raises_when_both_blocked(node_module):
-    """Base64 与明文都被 WAF 拦 → 明确抛错，不伪装成成功。"""
-    sent, responses = [], [
-        _FakeResp(403, "text/html", "<html>WAF</html>"),
-        _FakeResp(403, "text/html", "<html>WAF</html>"),
-    ]
-    node_module["requests"] = _fake_requests(responses, sent)
-    with pytest.raises(RuntimeError, match="WAF"):
-        node_module["_post"]("ep", {}, _PAYLOAD, 10, dict(_EMPTY))
-    assert len(sent) == 2
+def test_main_waf_blocked_reports_without_retry(node_module):
+    """被 WAF 拦时只发一次请求，并返回明确的失败原因。"""
+    sent = []
+    node_module["requests"] = _fake_requests(
+        [FakeResp(403, "text/html", "<html>WAF</html>")], sent)
+    out = node_module["main"](*_ARGS)
+    assert out["ok"] is False
+    assert "WAF" in out["error"]
+    assert len(sent) == 1, "WAF 拦截不应重试"
 
+
+def test_main_business_error_passthrough(node_module):
+    """业务返回 ok=false 时透传错误，不当成 WAF。"""
+    sent = []
+    node_module["requests"] = _fake_requests(
+        [FakeResp(200, "application/json", {"ok": False, "error": "bad scores"})], sent)
+    out = node_module["main"](*_ARGS)
+    assert out["ok"] is False
+    assert out["error"] == "bad scores"

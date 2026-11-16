@@ -374,26 +374,22 @@ async def analyze(request: Request, _key: str = Depends(require_api_key)):
 async def render(request: Request, _key: str = Depends(require_api_key)):
     """渲染中文 HTML 报告，落盘 results/，并返回在线访问链接。
 
-    传 run_id 时所有大字段从暂存取，body 只需 {run_id, scores}。
+    传 run_id 时所有大字段从暂存取，body 只需 {run_id, scores, plan_md}。
     scores 可缺省/格式不合法——缺省时渲染器用确定性数据生成兜底发现。
     plan_md 为 GEO 执行清单 Markdown：落盘为 <domain>-geo-plan.md，
     md_url 即该清单的在线链接；缺省时 md_url 为 None（不再落盘诊断报告 md）。
 
-    WAF 规避：body 里带 "encoding": "base64" 时，scores / plan_md 按 Base64
-    （utf-8）解码后再用。Render 边缘 WAF 会对请求体做内容匹配，正文里出现
-    "…/../etc/passwd" 这类目录穿越特征串时，请求在到达本服务前就被 403 拦掉
-    （响应是 text/html 拦截页，不是本服务的 JSON）。客户端把这两个字段
-    Base64 后发送即可绕过，服务端解码后行为完全一致。
+    WAF 规避（可选）：body 里带 "encoding": "base64" 时，scores / plan_md
+    按 Base64（utf-8）解码后再用。Render 边缘 WAF 会对请求体做内容匹配，
+    正文里出现 "…/../etc/passwd" 这类目录穿越特征串时会被 403 拦掉
+    （响应是 text/html 拦截页，不是本服务的 JSON）。客户端若具备编码能力
+    可用该方式；不具备时按明文传参即可，行为完全一致。
 
     返回 {success, html, size, domain, url, filename, result_dir,
           report_path, report_url, md_path, md_url, is_fallback, error}。
-    report_url 可直接浏览器打开，md_url 是执行清单 Markdown 在线链接（未传 plan_md 时为 None）。
     """
     body = _parse_body(await request.body())
     run_id = str(body.get("run_id") or "").strip()
-    # scores / plan_md 支持 Base64 传输（body 带 "encoding": "base64"），
-    # 用于规避 Render 边缘 WAF 对请求体里「../../etc/passwd」这类目录穿越
-    # 特征串的误拦；未声明编码时按明文处理，行为与之前一致。
     scores = _as_json(_decoded(body, "scores")) or {}
     plan_md = str(_decoded(body, "plan_md") or "")
     offline = bool(body.get("offline", False))

@@ -12,15 +12,26 @@
 3. **site_analyze**：入参 `{"run_id": <run_id>, "url": <用户URL>}`，得到 issues/signals_summary/baseline_scores/brand/**p0_blockers**（P0 阻塞清单，服务端确定性判定——评分定 Critical 与执行清单前置判定都以它为准）。
 4. **写 scores**：读技能 `website_audit`（评分卡），输出合法 scores.json——五维分 + findings + quick_wins/medium_term/strategic。**写 findings 前做去重自检：同根因合并为 1 条——包括跨维度换措辞的重复：「首页零 JSON-LD」「品牌在官方声明页上没有结构化锚点」「主页缺 Organization schema（其他页面有）」三条同根因，只留 1 条；现象与测量、同类多处的问题也各合并为 1 条。**写完用 `python3 -m json.tool` 自验。
 5. **写执行清单**：读技能 `execution_plan`，直写一份 8–14 项、可独立勾选验收的 Markdown 执行清单。
-6. **site_render**：入参 `{"run_id": <run_id>, "url": <用户URL>, "scores": "<base64>", "plan_md": "<base64>", "encoding": "base64"}`。**url 必带**——服务端 run_id 暂存 2 小时过期（或重启清空）后靠它兜底定域名与报告链接，不带会渲染成 `site-geo-report.html`。
+6. **site_render**：**四个参数全部必填，一个都不能漏**——`run_id`、`url`、`scores`、`plan_md`。
 
-   **scores 与 plan_md 一律先转 Base64(utf-8) 再传，并把 encoding 设为 base64**：
-   - 先用 `json.dumps(scores_obj, ensure_ascii=False)` 得到 JSON 字符串；无 scores 时用 `"{}"`
-   - 再分别对这两个字符串做 Base64 编码，作为 scores / plan_md 的值
-   - 服务端前有 Render 边缘 WAF，会检测请求体正文：`plan_md` / `scores` 里一旦出现 `../../etc/passwd` 这类目录穿越示例串，明文请求会在到达服务前被拦，返回 **HTTP 403 + HTML 拦截页**（页脚 "Powered by Render"），应用日志无记录
-   - **仅当**服务端报「响应无法解析为 JSON」（说明服务端是旧版本、不认识 encoding）时，才改为 `encoding` 留空、scores / plan_md 传明文重试一次
+   ```
+   site_render(
+     run_id  = <diagnose_run 返回的 run_id>,
+     url     = <用户输入的 URL>,
+     scores  = <第 4 步 scores 对象经 json.dumps 得到的字符串>,
+     plan_md = <第 5 步执行清单 Markdown 全文>
+   )
+   ```
+
+   - `scores`：把第 4 步写好的对象用 `json.dumps(obj, ensure_ascii=False)` 转成一个字符串再传，**不要**传对象本身；确实没有评分时传 `"{}"`。
+   - `plan_md`：第 5 步写好的执行清单 Markdown **原文**，整段传进去，不要只传摘要、不要省略、不要改成别的形态。
+   - `url`：必带——服务端 run_id 暂存 2 小时过期（或重启清空）后靠它兜底定域名与报告链接。
+   - **不需要传 `encoding` 或做任何 Base64 编码**，服务端直接接收明文。
 
    服务端把报告与执行清单落盘，返回 `report_url`（在线 HTML 报告）、`html`（报告 HTML 全文）与 `md_url`（执行清单 Markdown 在线链接）。
+
+   ⚠️ 若返回 HTTP 403 且是 HTML 拦截页（页脚 "Powered by Render"），说明请求被平台边缘 WAF 拦在了服务外——**这不是参数错误，重试同样的调用没有意义**。此时直接进入第 7 步：`result` 里如实写「报告渲染失败：请求被平台 WAF 拦截」，`html_url` / `html_result` / `md_url` 填空字符串，不要伪造链接。
+
 7. **最终输出（必须是一个 JSON 数组，且只含一个对象，四个字段全在这一个对象里；不要输出纯文本、不要包 markdown 代码围栏）**：
 
 ```json
