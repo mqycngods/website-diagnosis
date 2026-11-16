@@ -12,9 +12,15 @@
 3. **site_analyze**：入参 `{"run_id": <run_id>, "url": <用户URL>}`，得到 issues/signals_summary/baseline_scores/brand/**p0_blockers**（P0 阻塞清单，服务端确定性判定——评分定 Critical 与执行清单前置判定都以它为准）。
 4. **写 scores**：读技能 `website_audit`（评分卡），输出合法 scores.json——五维分 + findings + quick_wins/medium_term/strategic。**写 findings 前做去重自检：同根因合并为 1 条——包括跨维度换措辞的重复：「首页零 JSON-LD」「品牌在官方声明页上没有结构化锚点」「主页缺 Organization schema（其他页面有）」三条同根因，只留 1 条；现象与测量、同类多处的问题也各合并为 1 条。**写完用 `python3 -m json.tool` 自验。
 5. **写执行清单**：读技能 `execution_plan`，直写一份 8–14 项、可独立勾选验收的 Markdown 执行清单。
-6. **site_render**：入参 `{"run_id": <run_id>, "url": <用户URL>, "scores": "<第 4 步 scores 的 JSON 字符串>", "plan_md": "<第 5 步执行清单 Markdown 的 JSON 字符串>"}`。**url 必带**——服务端 run_id 暂存 2 小时过期（或重启清空）后靠它兜底定域名与报告链接，不带会渲染成 `site-geo-report.html`。**scores 与 plan_md 都必须传字符串**——json.dumps 序列化成字符串再传，不要传对象/裸文本本身；无 scores 时传 `"{}"`。服务端把报告与执行清单落盘，返回 `report_url`（在线 HTML 报告）、`html`（报告 HTML 全文）与 `md_url`（执行清单 Markdown 在线链接）。
+6. **site_render**：入参 `{"run_id": <run_id>, "url": <用户URL>, "scores": "<base64>", "plan_md": "<base64>", "encoding": "base64"}`。**url 必带**——服务端 run_id 暂存 2 小时过期（或重启清空）后靠它兜底定域名与报告链接，不带会渲染成 `site-geo-report.html`。
 
-   **若返回 HTTP 403 且响应是 HTML 拦截页**（正文含「web application firewall」，页脚 "Powered by Render"），说明是边缘 WAF 拦下了请求体内容——通常是 `plan_md` 或 `scores` 里恰好写了 `../../etc/passwd` 这类目录穿越示例串。此时**不要当失败**：把 `scores` 与 `plan_md` 各自 Base64（utf-8）后，加上 `"encoding": "base64"` 重新调用一次 site_render，服务端会自动解码。仅重试一次即可。
+   **scores 与 plan_md 一律先转 Base64(utf-8) 再传，并把 encoding 设为 base64**：
+   - 先用 `json.dumps(scores_obj, ensure_ascii=False)` 得到 JSON 字符串；无 scores 时用 `"{}"`
+   - 再分别对这两个字符串做 Base64 编码，作为 scores / plan_md 的值
+   - 服务端前有 Render 边缘 WAF，会检测请求体正文：`plan_md` / `scores` 里一旦出现 `../../etc/passwd` 这类目录穿越示例串，明文请求会在到达服务前被拦，返回 **HTTP 403 + HTML 拦截页**（页脚 "Powered by Render"），应用日志无记录
+   - **仅当**服务端报「响应无法解析为 JSON」（说明服务端是旧版本、不认识 encoding）时，才改为 `encoding` 留空、scores / plan_md 传明文重试一次
+
+   服务端把报告与执行清单落盘，返回 `report_url`（在线 HTML 报告）、`html`（报告 HTML 全文）与 `md_url`（执行清单 Markdown 在线链接）。
 7. **最终输出（必须是一个 JSON 数组，且只含一个对象，四个字段全在这一个对象里；不要输出纯文本、不要包 markdown 代码围栏）**：
 
 ```json

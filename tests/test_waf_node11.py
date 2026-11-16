@@ -62,14 +62,14 @@ def test_waf_blocked_detects_body_signature(node_module):
     assert node_module["_waf_blocked"](r) is True
 
 
-def test_encode_payload_base64_and_flag(node_module):
+def test_b64_payload_marks_encoding(node_module):
     import base64
     payload = {
         "run_id": "r1", "url": "https://x.com",
         "scores": '{"a": 1}',
         "plan_md": "检查 ../../etc/passwd",
     }
-    enc = node_module["_encode_payload"](payload)
+    enc = node_module["_b64_payload"](payload)
     assert enc["encoding"] == "base64"
     assert base64.b64decode(enc["plan_md"]).decode() == "检查 ../../etc/passwd"
     assert base64.b64decode(enc["scores"]).decode() == '{"a": 1}'
@@ -78,9 +78,89 @@ def test_encode_payload_base64_and_flag(node_module):
     assert "../../etc/passwd" not in json.dumps(enc, ensure_ascii=False)
 
 
-def test_encode_payload_keeps_other_fields(node_module):
+def test_b64_payload_keeps_other_fields(node_module):
     payload = {"run_id": "r1", "url": "https://x.com", "domain": "x.com",
                "scores": "{}", "plan_md": ""}
-    enc = node_module["_encode_payload"](payload)
+    enc = node_module["_b64_payload"](payload)
     assert enc["run_id"] == "r1" and enc["url"] == "https://x.com"
     assert enc["domain"] == "x.com"
+
+
+# ── 请求顺序：一律先发 Base64 ────────────────────────────────
+
+class _FakeResp:
+    def __init__(self, status, ctype, payload):
+        self.status_code = status
+        self.headers = {"Content-Type": ctype}
+        self._payload = payload
+        self.text = payload if isinstance(payload, str) else ""
+
+    def json(self):
+        if isinstance(self._payload, dict):
+            return self._payload
+        raise ValueError("not json")
+
+
+def _fake_requests(responses, sent):
+    class FakeExceptions:
+        class Timeout(Exception):
+            pass
+        class ConnectionError(Exception):
+            pass
+
+    class FakeRequests:
+        exceptions = FakeExceptions
+
+        @staticmethod
+        def post(endpoint, json=None, headers=None, timeout=None):
+            sent.append(json)
+            return responses.pop(0)
+
+    return FakeRequests
+
+
+_OK = {"ok": True, "data": {"geo_score": 42, "label_zh": "中等",
+                            "report_html": "<html>", "report_markdown": "md",
+                            "download_url_html": "h", "download_url_md": "m"}}
+_EMPTY = {"ok": False, "error": "", "geo_score": 0, "label_zh": "", "report_html": "",
+          "report_markdown": "", "download_url_html": "", "download_url_md": ""}
+_PAYLOAD = {"run_id": "r1", "url": "https://x.com", "domain": "x.com",
+            "scores": "{}", "plan_md": "检查 ../../etc/passwd"}
+
+
+def test_post_sends_base64_first_and_only_once(node_module):
+    """服务端支持编码：只发一次，且首发即 Base64、不含明文穿越串。"""
+    import json
+    sent, responses = [], [_FakeResp(200, "application/json", _OK)]
+    node_module["requests"] = _fake_requests(responses, sent)
+    out = node_module["_post"]("ep", {}, _PAYLOAD, 10, dict(_EMPTY))
+    assert len(sent) == 1
+    assert sent[0]["encoding"] == "base64"
+    assert "../../etc/passwd" not in json.dumps(sent[0], ensure_ascii=False)
+    assert out["geo_score"] == 42
+
+
+def test_post_falls_back_to_plaintext_for_old_server(node_module):
+    """旧服务端把 Base64 当明文（响应非 JSON）→ 回落明文重试一次。"""
+    sent, responses = [], [
+        _FakeResp(200, "text/html", "<html>渲染失败</html>"),
+        _FakeResp(200, "application/json", _OK),
+    ]
+    node_module["requests"] = _fake_requests(responses, sent)
+    out = node_module["_post"]("ep", {}, _PAYLOAD, 10, dict(_EMPTY))
+    assert len(sent) == 2
+    assert "encoding" not in sent[1]
+    assert out["geo_score"] == 42
+
+
+def test_post_raises_when_both_blocked(node_module):
+    """Base64 与明文都被 WAF 拦 → 明确抛错，不伪装成成功。"""
+    sent, responses = [], [
+        _FakeResp(403, "text/html", "<html>WAF</html>"),
+        _FakeResp(403, "text/html", "<html>WAF</html>"),
+    ]
+    node_module["requests"] = _fake_requests(responses, sent)
+    with pytest.raises(RuntimeError, match="WAF"):
+        node_module["_post"]("ep", {}, _PAYLOAD, 10, dict(_EMPTY))
+    assert len(sent) == 2
+

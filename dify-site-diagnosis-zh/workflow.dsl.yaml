@@ -1394,20 +1394,22 @@ workflow:
         code: "import base64\nimport json\nimport requests\nimport time\n\n\ndef _waf_blocked(resp):\n    \"\"\"判断是否被边缘 WAF 拦下（Render 的 WAF 页）。\n\n    正常响应一定是 JSON（application/json）；WAF 拦截页是 text/html。\n\
           \    结构上再兜一层：403/406 且正文提到 web application firewall 也算。\n    \"\"\"\n    if resp.status_code not in (403, 406):\n        return False\n    ctype = (resp.headers.get(\"Content-Type\") or \"\").lower()\n\
           \    if \"text/html\" in ctype:\n        return True\n    body = (resp.text or \"\")[:4000].lower()\n    return \"web application firewall\" in body or \"blocked by this site\" in body\n\n\ndef\
-          \ _encode_payload(payload):\n    \"\"\"把 scores / plan_md 转成 Base64，绕开 WAF 的请求体内容匹配。\"\"\"\n    enc = dict(payload)\n    for key in (\"scores\", \"plan_md\"):\n        val = enc.get(key)\n   \
-          \     if not isinstance(val, str):\n            val = json.dumps(val, ensure_ascii=False) if val is not None else \"\"\n        enc[key] = base64.b64encode(val.encode(\"utf-8\")).decode(\"ascii\"\
-          )\n    enc[\"encoding\"] = \"base64\"\n    return enc\n\n\ndef _post(endpoint, headers, payload, timeout):\n    resp = requests.post(endpoint, json=payload, headers=headers, timeout=timeout)\n\
-          \    if _waf_blocked(resp):\n        # WAF 拦的是请求体内容：同一份数据 Base64 后重发一次\n        resp = requests.post(endpoint, json=_encode_payload(payload),\n                             headers=headers, timeout=timeout)\n\
-          \        if _waf_blocked(resp):\n            raise RuntimeError(\"请求被边缘 WAF 拦截（Base64 重试后仍 403）\")\n    return resp\n\n\ndef main(run_id, url, domain, scores, plan_md, biz_api_base, geo_api_token):\n\
-          \    headers = {\"Authorization\": f\"Bearer {geo_api_token}\"}\n    endpoint = f\"{biz_api_base}/api/v1/tools/diagnosis_render\"\n    payload = {\"run_id\": run_id, \"url\": url, \"domain\":\
-          \ domain,\n               \"scores\": scores, \"plan_md\": plan_md}\n    empty = {\"ok\": False, \"error\": \"\", \"geo_score\": 0, \"label_zh\": \"\",\n             \"report_html\": \"\", \"\
-          report_markdown\": \"\",\n             \"download_url_html\": \"\", \"download_url_md\": \"\"}\n    last_error = \"\"\n    for attempt in range(3):\n        try:\n            resp = _post(endpoint,\
-          \ headers, payload, 120)\n            result = resp.json()\n            if not result.get(\"ok\"):\n                empty[\"error\"] = result.get(\"error\", \"unknown\")\n                return\
-          \ empty\n            d = result.get(\"data\", {})\n            return _empty_ok(d)\n        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:\n            last_error\
-          \ = f\"attempt {attempt+1}/3: {type(e).__name__}: {e}\"\n            if attempt < 2:\n                time.sleep(2 ** attempt)\n        except Exception as e:\n            empty[\"error\"] = f\"\
-          {type(e).__name__}: {e}\"\n            return empty\n    empty[\"error\"] = f\"重试 3 次仍失败: {last_error}\"\n    return empty\n\n\ndef _empty_ok(d):\n    return {\"ok\": True, \"error\": \"\", \"\
-          geo_score\": d.get(\"geo_score\", 0),\n            \"label_zh\": d.get(\"label_zh\", \"\"), \"report_html\": d.get(\"report_html\", \"\"),\n            \"report_markdown\": d.get(\"report_markdown\"\
-          , \"\"),\n            \"download_url_html\": d.get(\"download_url_html\", \"\"),\n            \"download_url_md\": d.get(\"download_url_md\", \"\")}"
+          \ _b64_payload(payload):\n    \"\"\"把 scores / plan_md 转成 Base64 并声明 encoding，规避 WAF 内容匹配。\"\"\"\n    enc = dict(payload)\n    for key in (\"scores\", \"plan_md\"):\n        val = enc.get(key)\n\
+          \        if not isinstance(val, str):\n            val = json.dumps(val, ensure_ascii=False) if val is not None else \"\"\n        enc[key] = base64.b64encode(val.encode(\"utf-8\")).decode(\"\
+          ascii\")\n    enc[\"encoding\"] = \"base64\"\n    return enc\n\n\ndef _ok_result(d):\n    return {\"ok\": True, \"error\": \"\", \"geo_score\": d.get(\"geo_score\", 0),\n            \"label_zh\"\
+          : d.get(\"label_zh\", \"\"), \"report_html\": d.get(\"report_html\", \"\"),\n            \"report_markdown\": d.get(\"report_markdown\", \"\"),\n            \"download_url_html\": d.get(\"download_url_html\"\
+          , \"\"),\n            \"download_url_md\": d.get(\"download_url_md\", \"\")}\n\n\ndef _parse(resp, empty):\n    \"\"\"解析业务响应。返回 (已解析, 结果)。解析失败表示服务端没按编码处理。\"\"\"\n    try:\n        result = resp.json()\n\
+          \    except Exception:\n        return False, None\n    if not result.get(\"ok\"):\n        empty[\"error\"] = result.get(\"error\", \"unknown\")\n        return True, dict(empty)\n    return\
+          \ True, _ok_result(result.get(\"data\", {}))\n\n\ndef _post(endpoint, headers, payload, timeout, empty):\n    \"\"\"先发 Base64；WAF 拦截或服务端不认编码时，回落明文各试一次。\"\"\"\n    resp = requests.post(endpoint,\
+          \ json=_b64_payload(payload),\n                         headers=headers, timeout=timeout)\n    if not _waf_blocked(resp):\n        parsed, out = _parse(resp, empty)\n        if parsed:\n     \
+          \       return out\n    # 旧服务端把 Base64 当明文渲染（会失败）或直接被 WAF 拦——回落明文\n    plain = {k: v for k, v in payload.items() if k != \"encoding\"}\n    resp = requests.post(endpoint, json=plain, headers=headers,\
+          \ timeout=timeout)\n    if _waf_blocked(resp):\n        raise RuntimeError(\"请求被边缘 WAF 拦截（Base64 与明文均被拦）\")\n    parsed, out = _parse(resp, empty)\n    if not parsed:\n        raise RuntimeError(\"\
+          响应无法解析为 JSON（HTTP %s）\" % resp.status_code)\n    return out\n\n\ndef main(run_id, url, domain, scores, plan_md, biz_api_base, geo_api_token):\n    headers = {\"Authorization\": f\"Bearer {geo_api_token}\"\
+          }\n    endpoint = f\"{biz_api_base}/api/v1/tools/diagnosis_render\"\n    payload = {\"run_id\": run_id, \"url\": url, \"domain\": domain,\n               \"scores\": scores, \"plan_md\": plan_md}\n\
+          \    empty = {\"ok\": False, \"error\": \"\", \"geo_score\": 0, \"label_zh\": \"\",\n             \"report_html\": \"\", \"report_markdown\": \"\",\n             \"download_url_html\": \"\", \"\
+          download_url_md\": \"\"}\n    last_error = \"\"\n    for attempt in range(3):\n        try:\n            return _post(endpoint, headers, payload, 120, empty)\n        except (requests.exceptions.Timeout,\
+          \ requests.exceptions.ConnectionError) as e:\n            last_error = f\"attempt {attempt+1}/3: {type(e).__name__}: {e}\"\n            if attempt < 2:\n                time.sleep(2 ** attempt)\n\
+          \        except Exception as e:\n            empty[\"error\"] = f\"{type(e).__name__}: {e}\"\n            return empty\n    empty[\"error\"] = f\"重试 3 次仍失败: {last_error}\"\n    return empty"
         code_language: python3
         desc: diagnosis_render：build_report_from_dict + 渲染，直接返回 HTML/MD 字符串
         variables:

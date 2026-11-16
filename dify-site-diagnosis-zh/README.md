@@ -97,17 +97,24 @@ LLM 写修复建议时偶尔会带上），请求会在到达 uvicorn 之前被�
 **HTTP 403 + text/html 拦截页**（页脚署名 "Powered by Render"），应用日志里
 没有任何记录。表现为「偶现 403，换个 URL 又好了」。
 
-节点 11 已做两层处理：
+节点 11 的策略是**一律先发 Base64**：
 
-1. **识别**：响应为 403/406 且 `Content-Type` 是 `text/html`（或正文含
-   "web application firewall"）即判定为 WAF 拦截——业务侧错误都是 JSON，
-   不会误判。
-2. **重试**：把 `scores` / `plan_md` Base64 后带上 `"encoding": "base64"`
-   重发一次。服务端 `diagnosis_render` 按该声明解码，行为与明文完全一致。
+1. **发**：`scores` / `plan_md` 先 Base64(utf-8)，并在 body 带 `"encoding": "base64"`。
+   服务端 `diagnosis_render` 按该声明解码，行为与明文完全一致。
+2. **为什么**：Render 边缘 WAF 会检测 POST 请求体内容。正文里出现目录穿越特征串
+   （`../../etc/passwd`、`../../proc/self/environ`、`%2e%2e%2f…` 等，LLM 写
+   修复建议或命令示例时偶有出现）时，请求会在到达 uvicorn 之前被拦，返回
+   **HTTP 403 + text/html 拦截页**（页脚署名 "Powered by Render"），应用日志无记录。
+   先发明文就是每次白挨一次 403 再重试，多一次往返。
+3. **兼容兜底**：若服务端是旧版本（不认识 `encoding`，会把 Base64 当明文导致渲染失败），
+   节点检测到响应无法解析为 JSON 后，回落明文重试一次。
+4. **识别 WAF**：403/406 且 `Content-Type` 为 `text/html`（或正文含
+   "web application firewall"）即判定为 WAF 拦截——业务侧错误一律是 JSON，不会误判。
 
 服务端解码实现见 `tools/api_server.py` 的 `_decoded()` / `_maybe_b64()`，
 回归测试见 `tests/test_waf_encoding.py` 与 `tests/test_waf_node11.py`。
 明文传参仍然支持，旧客户端无需改动。
+
 
 
 ## 关键设计
