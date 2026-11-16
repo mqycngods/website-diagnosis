@@ -167,9 +167,11 @@ def build_client_report_data(
         findings, schema, fetch, citability, brand, url=url
     )
 
-    # 构建优先级行动
+    # 构建优先级行动（page_recs 里 finding_index=-1 的派生项也进 P 级清单，
+    # 否则「首页缺 Organization」等只在按页面视图出现、按优先级清单里消失）
     report.priority_actions = _build_priority_actions(
-        findings, quick_wins, medium_term, strategic, fetch=fetch, url=url
+        findings, quick_wins, medium_term, strategic, fetch=fetch, url=url,
+        page_recs=report.page_recommendations,
     )
 
     # 构建 Roadmap（引用 priority_actions 的 finding_index，不再复制正文）
@@ -328,6 +330,7 @@ def _build_priority_actions(
     strategic: list,
     fetch: dict = None,
     url: str = "",
+    page_recs: list = None,
 ) -> list[PriorityAction]:
     """构建优先级行动列表。
 
@@ -335,6 +338,9 @@ def _build_priority_actions(
     - finding 派生的行动（Critical/High）带 finding_index，是主行动。
     - quick_wins / medium_term / strategic 派生的行动 finding_index=-1；
       若与任何 finding 主题重合（按 _is_overlapping），直接丢弃。
+    - page_recs 里 finding_index=-1 的派生建议（schema/citability 硬数据派生）
+      也进 P 级清单——否则「首页缺 Organization」「产品页缺 Product」等只在
+      按页面视图出现，按优先级清单里完全消失（2026-11 修复）。
     """
     actions = []
 
@@ -357,6 +363,27 @@ def _build_priority_actions(
             page=_infer_page_from_finding(f, fetch=fetch),
             code_example=_generate_code_example(f, {}, fetch=fetch, url=url),
             finding_index=idx,
+        ))
+
+    # schema/citability 派生的页面建议（finding_index=-1）：不进 findings，
+    # 但必须进 priority_actions，否则按优先级清单看不到「首页缺 Organization」等
+    for rec in (page_recs or []):
+        if getattr(rec, "finding_index", -1) != -1:
+            continue  # finding 派生的已在上面覆盖
+        text = f"{rec.issue} {rec.recommendation}"
+        if any(_is_overlapping(text, fx, threshold=0.25) for fx in finding_texts):
+            continue  # 与已有 finding 同主题，不重复列
+        finding_texts.append(text)  # 防止后续 actions 再与它重叠
+        actions.append(PriorityAction(
+            action=rec.recommendation,
+            title=rec.issue,
+            priority=rec.priority or "P1",
+            impact=rec.impact or "High",
+            effort=rec.effort or "hours",
+            owner="developer",
+            page=getattr(rec, "page", "") or "",
+            code_example=getattr(rec, "code_example", "") or "",
+            finding_index=-1,
         ))
 
     # 从 quick_wins / medium_term / strategic 补充（与 findings 重叠的丢弃）
@@ -437,7 +464,19 @@ def _is_overlapping(a_text: str, b_text: str, threshold: float = 0.5) -> bool:
 
     用包含度（|a∩b| / |shorter|）而非 Jaccard——finding 的 fix 通常远长于
     quick_win 的一句话，Jaccard 分母会被长文本稀释导致漏判。
+
+    Schema 类建议防误并：两条文本若各自命中不同的 schema 类型词
+    （Organization / Product / Article / Person / FAQPage…），是不同实体的
+    修复，不算重叠——否则「缺 Organization」和「缺 Product」会因共享
+    json-ld/schema/添加 等通用词被误并（2026-11 修复）。
     """
+    schema_types = ["organization", "product", "article", "newsarticle", "blogposting",
+                    "person", "faqpage", "breadcrumblist", "website", "service", "itemlist"]
+    a_types = {st for st in schema_types if st in (a_text or "").lower()}
+    b_types = {st for st in schema_types if st in (b_text or "").lower()}
+    if a_types and b_types and not (a_types & b_types):
+        return False
+
     sa, sb = _action_signature(a_text), _action_signature(b_text)
     if not sa or not sb:
         return False
@@ -816,6 +855,30 @@ def _derive_schema_page_recs(schema: dict, fetch: dict, url: str = "") -> list[P
             impact="High",
             effort="hours",
             code_example=_product_schema_example(url=url, brand=_site_name_from_fetch(fetch, url)),
+        ))
+
+    # 文章页缺 Article/Person：AI 引用文章时需 publisher/author 实体支撑可信度
+    article_status = next((i for i in inv if i.get("schema_type") == "Article"), None)
+    if article_status and article_status.get("status") == "Missing":
+        recs.append(PageRecommendation(
+            page="/news/",
+            page_type="news",
+            issue="文章页缺少 Article Schema",
+            recommendation="为每篇文章页添加 Article JSON-LD（headline/datePublished/dateModified/author/publisher）",
+            priority="P1",
+            impact="High",
+            effort="hours",
+        ))
+    person_status = next((i for i in inv if i.get("schema_type") == "Person"), None)
+    if person_status and person_status.get("status") == "Missing":
+        recs.append(PageRecommendation(
+            page="/news/",
+            page_type="news",
+            issue="文章页缺少 Person 作者 Schema",
+            recommendation="在文章页 Article Schema 的 author 字段嵌入 Person 实体（name/jobTitle/url），与文末署名一致",
+            priority="P1",
+            impact="High",
+            effort="hours",
         ))
 
     return recs

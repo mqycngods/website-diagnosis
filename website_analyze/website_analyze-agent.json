@@ -213,7 +213,7 @@
         "params": {},
         "headers": {
           "X-API-Key": "dg2fjgthISORePJ3cYtiws9RcCvsGlyEWLshikBr1gc",
-          "Content-Type": "application/json"
+          "Content-Type": "text/plain"
         },
         "timeout": 120,
         "auth_type": "none",

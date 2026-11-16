@@ -49,19 +49,21 @@
 1. **抓取通道被切断**（最硬）：UA 拦截（Cloudflare 托管挑战/防火墙拦 GPTBot/ClaudeBot/PerplexityBot/OAI-SearchBot，人肉正常 AI 侧 403）；robots.txt 禁**检索类**爬虫（OAI-SearchBot/Claude-SearchBot/PerplexityBot）；无 SSR/预渲染（正文依赖 JS）；正文被墙（登录墙/付费墙/遮罩）；页面发现不了（无 sitemap、内链断）；全面 5xx 或极慢。
 2. **抓到了但读不出内容**：核心信息全在图片/Canvas/视频/PDF；标题层级缺失或混乱；**纯营销短句堆砌、全文无一句完整陈述句**。**边界**：正文有完整段落但可引用性低（缺数据/缺来源/段落全 D 级）**不属于本类**——AI 读得到、引得动，只是引用价值低，属内容质量问题，定 High 进 medium_term，不进 P0。口诀：阻塞让 AI「读不到」，低可引用性只是「不想引」。
 3. **读懂了但不敢引用**（GEO 与 SEO 最大分野）：品牌身份自相矛盾（占位邮箱/假电话地址、多套值）；同一实体跨处冲突（schema 作者 A、文末 About 是 B/C/D）；无 Organization/Person；零数据零来源零署名。
-4. **实体锚定断裂**：**首页（官方声明页）无 Organization 或首页零 JSON-LD 即属本类——AI 建品牌实体优先读首页，首页没有锚点就是断裂，不因新闻页/子页有 Organization 而降级**；下游实体不指回上游（Product.brand 是纯文本、Article.publisher 不指 Organization）；无稳定 `@id`。**sameAs 单独定级**：仅当全站无 Organization（品牌根本没锚定）时 `sameAs` 空才随本类升 Critical；**有 Organization 时 `sameAs` 空 → 定 High**（削弱外部图谱对齐，但不切断引用）。
+4. **实体锚定断裂**：**仅「首页零 JSON-LD」（首页一个结构化数据块都没有）属本类——AI 建品牌实体优先读首页，完全空白才是断裂**。首页有 JSON-LD 但缺 Organization/WebSite/Product（如仅 BreadcrumbList）、或全站无 Organization 但首页有其他 JSON-LD，是**实体声明丰富度问题，定 High 不定 Critical**——管道已建立，缺的只是声明完整度，AI 可从正文/外链/知识图谱多源识别品牌实体。下游实体不指回上游（Product.brand 是纯文本、Article.publisher 不指 Organization）、无稳定 `@id` 同属 High。**sameAs 单独定级**：仅当首页零 JSON-LD 时 `sameAs` 空才随本类升 Critical；**其他情形 `sameAs` 空 → 定 High**（削弱外部图谱对齐，但不切断引用）。
 5. **时效性（准阻塞）**：无任何机器可读日期（dateModified / `<time datetime>` / sitemap lastmod）；首页长期未更新。
 
-**同源对齐（硬性）**：site_analyze 返回的 `p0_blockers` 是服务端按同样五类从实测数据确定性算出的阻塞清单。`p0_blockers` 非空时，**每条 blocker 都必须在 findings 里有一条对应 Critical finding**（可在 title 中体现其标题）；`p0_blockers` 为空时不得产出 Critical finding。两边永远一致，不得自行扩缩。
+**同源对齐（硬性）**：site_analyze 返回的 `p0_blockers` 是服务端按同样五类从实测数据算出的阻塞清单。**仅 `confidence` 为 `deterministic`（或未标）的 blocker 对齐 Critical**：每条此类 blocker 都必须在 findings 里有一条对应 Critical finding（可在 title 中体现其标题）；**`inferred` 疑似项不定 Critical**，按 High 写 finding 并在 evidence 注明「疑似，建议复测确认」。`p0_blockers` 为空或全为 inferred 时不得产出 Critical finding。两边永远一致，不得自行扩缩。
 
 ## severity 分级矩阵
 
-| severity | 判定标准 | 建议窗口 |
-|---|---|---|
-| Critical | 命中上述五类之一——不修则零引用 | 0–7 天 |
-| High | 不阻塞但明显压低引用概率/质量 | 1–4 周 |
-| Medium | 优化项，有影响但可延后 | 1–3 月 |
-| Low | 边缘优化 / 防御性工作 | 长期 |
+| severity | 判定标准 | 建议窗口 | 对应执行清单 priority |
+|---|---|---|---|
+| Critical（来自 `p0_blockers` 的 deterministic 项） | 命中上述五类之一且服务端直检确认——不修则零引用 | 0–7 天 | **P0** |
+| Critical（非阻塞类，或 `p0_blockers` 的 inferred 疑似项） / High | 不阻塞但明显压低引用概率/质量 | 1–4 周 | **P1** |
+| Medium | 优化项，有影响但可延后 | 1–3 月 | **P2** |
+| Low | 边缘优化 / 防御性工作 | 长期 | **P3** |
+
+**severity 与 P 级是同一条轴**：执行清单的 P0–P3 由上表机械映射得出，agent 写 findings 时就要想好它会落到哪一档，不要在 action 数组里再发明一套与 severity 无关的排序逻辑。渲染层「P0 立即修复 / P1 高优 / P2 优化 / P3 长期」只是展示名，定级真相以 severity 为准。**`p0_blockers` 里标了 `inferred` 的疑似项不定 Critical**——按 High 写 finding，evidence 注明「疑似，建议复测确认」。
 
 **修复成本只影响排序，不影响定级**：影响大但需数周/数月的（Wikidata 词条、媒体报道积累）不能仅因影响大就标 Critical——标 Medium/Low 进 `strategic`。一句话：Critical 是「通路问题」和「可信度崩塌问题」，不是「内容质量问题」。
 
@@ -97,9 +99,13 @@
 
 ① 前置依赖先做（Organization → Product → ItemList；Organization → sameAs；作者身份确认 → 内容改写）。② finding severity。③ 同 severity 按工作量升序。每个 action 末尾标注「（前置：无）/（前置：Organization schema 已就位）」。
 
-## Critical 覆盖性自检（硬性）
+## Critical 覆盖性自检（硬性，双向）
 
-写出三个 action 数组后：每条 Critical finding 必须能在 quick_wins 或 medium_term 找到对应 action；只能进 strategic 的必须在 `impact_estimate` 开头显式说明「Critical finding X 因需 N 周归入 strategic」。禁止「发现了但不给方案」，禁止「无中生有的 action」。
+写出三个 action 数组后逐条核对：
+
+1. **每条 Critical finding** 必须能在 quick_wins 或 medium_term 找到对应 action；只能进 strategic 的必须在 `impact_estimate` 开头显式说明「Critical finding X 因需 N 周归入 strategic」。
+2. **`p0_blockers` 里每条 blocker** 必须有一条对应 Critical finding（上文「同源对齐」），**且必须有一条对应 action**——blocker 修复成本高也只影响它落在 medium_term 而非 quick_wins，**不允许在三个数组里完全消失**。
+3. 禁止「发现了但不给方案」，禁止「无中生有的 action」。
 
 ## Schema 四态处理
 

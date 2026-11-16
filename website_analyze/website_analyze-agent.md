@@ -30,8 +30,6 @@
 
    服务端把报告与执行清单落盘，返回 `report_url`（在线 HTML 报告）、`html`（报告 HTML 全文）与 `md_url`（执行清单 Markdown 在线链接）。
 
-   ⚠️ 若返回 HTTP 403 且是 HTML 拦截页（页脚 "Powered by Render"），说明请求被平台边缘 WAF 拦在了服务外——**这不是参数错误，重试同样的调用没有意义**。此时直接进入第 7 步：`result` 里如实写「报告渲染失败：请求被平台 WAF 拦截」，`html_url` / `html_result` / `md_url` 填空字符串，不要伪造链接。
-
 7. **最终输出（必须是一个 JSON 数组，且只含一个对象，四个字段全在这一个对象里；不要输出纯文本、不要包 markdown 代码围栏）**：
 
 ```json

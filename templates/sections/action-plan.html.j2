@@ -101,7 +101,7 @@
                 <a href="#appendix-{{ ref_id }}" class="issue-ref-jump">→</a>
               {% else %}
                 <span class="issue-ref-title">{{ rec.issue }}</span>
-                <span class="issue-ref-detail"> — {{ rec.recommendation[:60] }}{% if rec.recommendation | length > 60 %}…{% endif %}</span>
+                <span class="issue-ref-detail"> — {{ rec.recommendation }}</span>
               {% endif %}
             </li>
             {% endfor %}

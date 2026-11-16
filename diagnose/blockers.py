@@ -249,13 +249,28 @@ def compute_p0_blockers(*, fetch: dict, bots: dict, schema: dict,
 def p0_blocking_note(blockers: list) -> str:
     """报告/清单共用的前置判定文案。blockers=None 表示无数据（走旧兜底）。
 
-    推断类（inferred）阻塞在文案中标注「疑似」，建议人工复核（原则 4）。
+    只有确定性（deterministic）阻塞才进入「不可直接优化」文案；
+    推断类（inferred）降级为「疑似」提示，不阻断、不定 P0（原则 3/4：
+    推断需多信号佐证，拿不准的一律降级）。inferred 项单独列出供人工复核。
     """
-    if blockers:
-        def _label(b):
-            return b["title"] + ("（疑似，建议复测确认）" if b.get("confidence") == "inferred" else "")
-        titles = "；".join(_label(b) for b in blockers[:3])
-        more = f" 等 {len(blockers)} 项" if len(blockers) > 3 else ""
-        return (f"当前官网不可直接 GEO 优化，包含 {len(blockers)} 项 P0 级阻塞需前置修复："
+    if not blockers:
+        return "可进行 GEO 优化，以下内容可慢慢调整。"
+
+    confirmed = [b for b in blockers if b.get("confidence") != "inferred"]
+    suspected = [b for b in blockers if b.get("confidence") == "inferred"]
+
+    if confirmed:
+        titles = "；".join(b["title"] for b in confirmed[:3])
+        more = f" 等 {len(confirmed)} 项" if len(confirmed) > 3 else ""
+        note = (f"当前官网不可直接 GEO 优化，包含 {len(confirmed)} 项 P0 级阻塞需前置修复："
                 f"{titles}{more}；在这些问题修复之前，其余优化动作难以生效。")
-    return "可进行 GEO 优化，以下内容可慢慢调整。"
+        if suspected:
+            s_titles = "；".join(b["title"] for b in suspected[:2])
+            note += f" 另有 {len(suspected)} 项疑似阻塞（{s_titles}），建议复测确认。"
+        return note
+
+    # 仅有疑似项：不阻断，提示复测
+    s_titles = "；".join(b["title"] for b in suspected[:3])
+    more = f" 等 {len(suspected)} 项" if len(suspected) > 3 else ""
+    return (f"可进行 GEO 优化。另有 {len(suspected)} 项疑似阻塞待确认："
+            f"{s_titles}{more}——建议复测后再定优先级。")

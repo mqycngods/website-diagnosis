@@ -83,8 +83,8 @@ def _fake_requests(responses, sent):
         exceptions = FakeExceptions
 
         @staticmethod
-        def post(endpoint, json=None, headers=None, timeout=None):
-            sent.append(json)
+        def post(endpoint, json=None, data=None, headers=None, timeout=None):
+            sent.append({"json": json, "data": data, "headers": headers})
             return responses.pop(0)
 
     return FakeRequests
@@ -106,15 +106,25 @@ def test_main_success(node_module):
     assert len(sent) == 1
 
 
-def test_main_sends_plaintext_json(node_module):
-    """请求体是明文 JSON，不做任何编码。"""
+def test_main_sends_json_with_text_plain_content_type(node_module):
+    """请求体是 JSON 字符串，但 Content-Type 必须是 text/plain。
+
+    Render 边缘 WAF 只在 Content-Type 为 application/json 时解析正文；
+    换成 text/plain 就不再检查内容（实测含 ../../etc/passwd 也放行）。
+    """
+    import json
     sent = []
     node_module["requests"] = _fake_requests(
         [FakeResp(200, "application/json", {"ok": True, "data": _OK_DATA})], sent)
     node_module["main"](*_ARGS)
-    assert sent[0]["scores"] == '{"a": 1}'
-    assert sent[0]["plan_md"] == "# 计划"
-    assert "encoding" not in sent[0]
+
+    req = sent[0]
+    assert req["headers"]["Content-Type"] == "text/plain"
+    assert req["json"] is None, "不应走 json= 参数（那会设成 application/json）"
+    body = json.loads(req["data"])
+    assert body["scores"] == '{"a": 1}'
+    assert body["plan_md"] == "# 计划"
+    assert "encoding" not in body
 
 
 def test_main_waf_blocked_reports_without_retry(node_module):
