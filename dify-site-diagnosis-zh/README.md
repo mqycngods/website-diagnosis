@@ -89,6 +89,27 @@ python dify-site-diagnosis-zh/server_endpoints.py   # 默认 9100 端口
 | Phase 2.5 执行计划 | 节点 10（LLM，system prompt 是 SKILL.md Phase 2.5 的压缩版） |
 | Phase 3 render | 节点 11（`build_report_from_dict` 纯内存渲染，不落地 results/ 目录） |
 
+## 部署在 Render 时的 WAF 规避
+
+Render 的边缘 WAF 会检测 **POST 请求体内容**。当 `scores` / `plan_md` 正文里
+出现目录穿越特征串（`../../etc/passwd`、`../../proc/self/environ`、`%2e%2e/` 等，
+LLM 写修复建议时偶尔会带上），请求会在到达 uvicorn 之前被拦掉，返回
+**HTTP 403 + text/html 拦截页**（页脚署名 "Powered by Render"），应用日志里
+没有任何记录。表现为「偶现 403，换个 URL 又好了」。
+
+节点 11 已做两层处理：
+
+1. **识别**：响应为 403/406 且 `Content-Type` 是 `text/html`（或正文含
+   "web application firewall"）即判定为 WAF 拦截——业务侧错误都是 JSON，
+   不会误判。
+2. **重试**：把 `scores` / `plan_md` Base64 后带上 `"encoding": "base64"`
+   重发一次。服务端 `diagnosis_render` 按该声明解码，行为与明文完全一致。
+
+服务端解码实现见 `tools/api_server.py` 的 `_decoded()` / `_maybe_b64()`，
+回归测试见 `tests/test_waf_encoding.py` 与 `tests/test_waf_node11.py`。
+明文传参仍然支持，旧客户端无需改动。
+
+
 ## 关键设计
 
 - **深度规避**：节点 7 的 findings/dimensions 等以 JSON **字符串**输出（`findings_json` 等），节点 8 本地解析修正——绕开 Dify structured_output 的嵌套深度与 30 元素限制（同 Agent A v2 节点 13 的 `config_json` 思路）

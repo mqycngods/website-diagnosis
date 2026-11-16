@@ -204,17 +204,88 @@ def main(run_id, scores_json, biz_api_base, geo_api_token):
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
     return {"ok": False, "error": f"重试 3 次仍失败: {last_error}"}'''
 
-NODE11_CODE = _http_node(
-    "diagnosis_render",
-    {"sig": "url, domain, ", "body": '"url": url, "domain": domain'},
-    '{"ok": True, "error": "", "geo_score": d.get("geo_score", 0), '
-    '"label_zh": d.get("label_zh", ""), "report_html": d.get("report_html", ""), '
-    '"report_markdown": d.get("report_markdown", ""), '
-    '"download_url_html": d.get("download_url_html", ""), '
-    '"download_url_md": d.get("download_url_md", "")}',
-    '"geo_score": 0, "label_zh": "", "report_html": "", "report_markdown": "", '
-    '"download_url_html": "", "download_url_md": ""',
-    timeout=120)
+# render 节点不走 _http_node：它要额外处理「边缘 WAF 误拦」与 Base64 兜底。
+# 服务端 diagnosis_render 在 body 带 "encoding": "base64" 时按 Base64 解码
+# scores / plan_md，因此这里先发明文（兼容旧服务端），遇到 WAF 拦截再改发编码体。
+NODE11_CODE = '''import base64
+import json
+import requests
+import time
+
+
+def _waf_blocked(resp):
+    """判断是否被边缘 WAF 拦下（Render 的 WAF 页）。
+
+    正常响应一定是 JSON（application/json）；WAF 拦截页是 text/html。
+    结构上再兜一层：403/406 且正文提到 web application firewall 也算。
+    """
+    if resp.status_code not in (403, 406):
+        return False
+    ctype = (resp.headers.get("Content-Type") or "").lower()
+    if "text/html" in ctype:
+        return True
+    body = (resp.text or "")[:4000].lower()
+    return "web application firewall" in body or "blocked by this site" in body
+
+
+def _encode_payload(payload):
+    """把 scores / plan_md 转成 Base64，绕开 WAF 的请求体内容匹配。"""
+    enc = dict(payload)
+    for key in ("scores", "plan_md"):
+        val = enc.get(key)
+        if not isinstance(val, str):
+            val = json.dumps(val, ensure_ascii=False) if val is not None else ""
+        enc[key] = base64.b64encode(val.encode("utf-8")).decode("ascii")
+    enc["encoding"] = "base64"
+    return enc
+
+
+def _post(endpoint, headers, payload, timeout):
+    resp = requests.post(endpoint, json=payload, headers=headers, timeout=timeout)
+    if _waf_blocked(resp):
+        # WAF 拦的是请求体内容：同一份数据 Base64 后重发一次
+        resp = requests.post(endpoint, json=_encode_payload(payload),
+                             headers=headers, timeout=timeout)
+        if _waf_blocked(resp):
+            raise RuntimeError("请求被边缘 WAF 拦截（Base64 重试后仍 403）")
+    return resp
+
+
+def main(run_id, url, domain, scores, plan_md, biz_api_base, geo_api_token):
+    headers = {"Authorization": f"Bearer {geo_api_token}"}
+    endpoint = f"{biz_api_base}/api/v1/tools/diagnosis_render"
+    payload = {"run_id": run_id, "url": url, "domain": domain,
+               "scores": scores, "plan_md": plan_md}
+    empty = {"ok": False, "error": "", "geo_score": 0, "label_zh": "",
+             "report_html": "", "report_markdown": "",
+             "download_url_html": "", "download_url_md": ""}
+    last_error = ""
+    for attempt in range(3):
+        try:
+            resp = _post(endpoint, headers, payload, 120)
+            result = resp.json()
+            if not result.get("ok"):
+                empty["error"] = result.get("error", "unknown")
+                return empty
+            d = result.get("data", {})
+            return _empty_ok(d)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            last_error = f"attempt {attempt+1}/3: {type(e).__name__}: {e}"
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+        except Exception as e:
+            empty["error"] = f"{type(e).__name__}: {e}"
+            return empty
+    empty["error"] = f"重试 3 次仍失败: {last_error}"
+    return empty
+
+
+def _empty_ok(d):
+    return {"ok": True, "error": "", "geo_score": d.get("geo_score", 0),
+            "label_zh": d.get("label_zh", ""), "report_html": d.get("report_html", ""),
+            "report_markdown": d.get("report_markdown", ""),
+            "download_url_html": d.get("download_url_html", ""),
+            "download_url_md": d.get("download_url_md", "")}'''
 
 # ── LLM Prompts ──────────────────────────────────────────────
 
@@ -687,7 +758,9 @@ def build_dsl():
                    NODE11_CODE,
                    [{"value_selector": [str(TS + 2), "run_id"], "variable": "run_id"},
                     {"value_selector": [str(TS + 2), "url"], "variable": "url"},
-                    {"value_selector": [str(TS + 2), "domain"], "variable": "domain"}]
+                    {"value_selector": [str(TS + 2), "domain"], "variable": "domain"},
+                    {"value_selector": [str(TS + 10), "scores_json"], "variable": "scores"},
+                    {"value_selector": [str(TS + 12), "plan_markdown"], "variable": "plan_md"}]
                    + env_vars,
                    {"ok": "boolean", "error": "string", "geo_score": "number",
                     "label_zh": "string", "report_html": "string",

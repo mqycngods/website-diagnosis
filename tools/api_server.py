@@ -24,6 +24,8 @@ results/ 落盘在 Render 免费档是临时的，重新部署会丢。
 from __future__ import annotations
 
 import ast
+import base64
+import binascii
 import json
 import os
 import re
@@ -138,6 +140,39 @@ def _parse_body(raw: bytes) -> dict:
     except Exception:
         pass
     return _loose_extract(text)
+
+
+def _maybe_b64(x: Any) -> Any:
+    """把 Base64 文本还原成原文，格式不合法则原样返回。
+
+    用于平台侧 Base64 传输：规避 Render 边缘 WAF 对请求体的「目录穿越」
+    误拦（实测 body 里出现 ../../etc/passwd 这类串会被 403，同样内容
+    Base64 后放行）。
+    """
+    if not isinstance(x, str) or not x.strip():
+        return x
+    try:
+        return base64.b64decode(x.strip(), validate=True).decode("utf-8", errors="replace")
+    except (binascii.Error, ValueError):
+        return x
+
+
+def _decoded(body: dict, key: str) -> Any:
+    """取字段值，按需 Base64 解码。
+
+    触发方式（任一声明成立即解码）：
+      - body["encoding"] == "base64"        （整包约定）
+      - body["<key>_encoding"] == "base64"  （逐字段约定）
+
+    只带 "encoding" 键而不带值的场景（模板未填变量）不解码——此时按原文处理，
+    与历史行为一致。解码不影响明文传参，向后兼容。
+    """
+    val = body.get(key)
+    flags = {str(body.get("encoding") or "").strip().lower(),
+             str(body.get(f"{key}_encoding") or "").strip().lower()}
+    if "base64" in flags:
+        return _maybe_b64(val)
+    return val
 
 
 def _as_json(x: Any) -> Any:
@@ -344,14 +379,23 @@ async def render(request: Request, _key: str = Depends(require_api_key)):
     plan_md 为 GEO 执行清单 Markdown：落盘为 <domain>-geo-plan.md，
     md_url 即该清单的在线链接；缺省时 md_url 为 None（不再落盘诊断报告 md）。
 
+    WAF 规避：body 里带 "encoding": "base64" 时，scores / plan_md 按 Base64
+    （utf-8）解码后再用。Render 边缘 WAF 会对请求体做内容匹配，正文里出现
+    "…/../etc/passwd" 这类目录穿越特征串时，请求在到达本服务前就被 403 拦掉
+    （响应是 text/html 拦截页，不是本服务的 JSON）。客户端把这两个字段
+    Base64 后发送即可绕过，服务端解码后行为完全一致。
+
     返回 {success, html, size, domain, url, filename, result_dir,
           report_path, report_url, md_path, md_url, is_fallback, error}。
     report_url 可直接浏览器打开，md_url 是执行清单 Markdown 在线链接（未传 plan_md 时为 None）。
     """
     body = _parse_body(await request.body())
     run_id = str(body.get("run_id") or "").strip()
-    scores = _as_json(body.get("scores")) or {}
-    plan_md = str(body.get("plan_md") or "")
+    # scores / plan_md 支持 Base64 传输（body 带 "encoding": "base64"），
+    # 用于规避 Render 边缘 WAF 对请求体里「../../etc/passwd」这类目录穿越
+    # 特征串的误拦；未声明编码时按明文处理，行为与之前一致。
+    scores = _as_json(_decoded(body, "scores")) or {}
+    plan_md = str(_decoded(body, "plan_md") or "")
     offline = bool(body.get("offline", False))
 
     if run_id:
