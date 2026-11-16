@@ -10,11 +10,43 @@
   ① 抓取通道被切断：首页抓取失败 / 检索类爬虫被拦 / 挑战页 / 无 SSR
   ② 抓到但读不出内容：正文极薄 / 正文薄且无任何标题层级
   ③ 读懂了但不敢引用：consistency 分析器判 Critical（身份数据自相矛盾）
-  ④ 实体锚定断裂：首页零 JSON-LD / 全站无 Organization / 主页缺 Organization
+  ④ 实体锚定断裂：仅「首页零 JSON-LD」（机器侧完全空白）
   ⑤ 时效性准阻塞：全站无任何机器可读日期
+
+P0 判定锚在「可观测的引用失败」上，而不是「形式缺失」上：
+形式缺失（没有某类 schema / 字段）默认 High，除非它与引用失败有必然
+因果（如无 SSR → 爬虫必然读不到正文）。首页零 JSON-LD 算 P0，因为
+「零」意味着机器读取管道完全未建立；而首页有 JSON-LD（哪怕只有
+BreadcrumbList）但无 Organization/WebSite/Product，说明管道在、内容在
+——缺的只是实体声明的丰富度，归 High 优化项，不是阻塞。同理，
+「全站无 Organization」削弱实体消歧的确定性但不切断引用通路（AI 可
+从正文/外链/知识图谱多源识别品牌实体），也归 High。
+
+规则设计六原则（新增规则必须逐条自查）：
+
+  1. 门槛：P0 = 不修就无法被引用。宁漏勿判；拿不准的一律降级 High。
+     「信号缺失」（上游没数据）与「信号显式为零」（扫了、确实没有）必须区分，
+     前者跳过而非判零。能触发 P0 的 issue kind 用白名单封闭枚举，
+     新 kind 默认只算 High，人工评审后才加入。
+  2. 根因抑制：一个病根只报一条。fetch 失败时 ②④⑤ 短路；no_ssr 抑制
+     thin_content / homepage_zero_jsonld / no_machine_readable_date
+     （无 SSR 必然薄、必然零 JSON-LD、必然无日期——同根因不重复列）。
+  3. 证据分级：直检（deterministic：HTTP 状态、JSON-LD 计数、爬虫探测）
+     命中即判；推断（inferred：正文薄、全站无日期）需多信号佐证，
+     evidence 中必须注明依据与余量。
+  4. 抗抖动：阈值边界附近的命中在 evidence 写明具体数值；挑战页等
+     间歇性信号标注 confidence 供报告端软化措辞。
+  5. 口径一致：与评分卡互锁——分析器定 Critical 不等于阻塞
+     （如 sameAs 为空：entity_graph 定 Critical，这里按评分卡口径排除）。
+     每条规则的排除边界写在 RULE_EXCLUSIONS，评审时逐条核对。
+  6. 回归锁定：每类规则在 tests/test_blockers.py 有命中 / 边界 / 抑制
+     三组用例，历史误判场景沉淀为 fixture 测试。
 
 注意边界（与评分卡一致，防止过判）：
   - 「有实质正文但可引用性低」是内容质量问题，不是阻塞——不看 citability 分数。
+  - 首页有 JSON-LD 但缺 Organization/WebSite/Product（如仅 BreadcrumbList）：
+    实体声明丰富度问题，归 High——管道已建立，缺的只是声明完整度。
+  - 全站无 Organization / 主页缺 Organization：削弱实体消歧确定性，归 High。
   - Organization 存在但 sameAs 为空：削弱图谱对齐但不切断引用，不算阻塞
     （entity_graph 分析器虽定 Critical，这里按评分卡口径排除）。
 """
@@ -28,10 +60,33 @@ _THIN_WORDS = 50
 # ②类补充：词数低于此值且完全没有标题层级也算（营销短句堆砌页）
 _THIN_WORDS_WITH_NO_HEADINGS = 150
 
-# ④类中允许升级为阻塞的 entity_graph issue kind（sameAs 类明确排除）
-_ENTITY_BLOCKER_KINDS = {"homepage_missing_organization"}
+# ③类中允许升级为阻塞的 consistency issue kind（白名单封闭枚举，原则 1）。
+# 目前 consistency 分析器产出 Critical 的只有 author_mismatch_template
+# （作者署名系统性冲突）；其余 kind 最高 High，天然不升 P0。
+# 新增 kind 需人工评审确认「不修就不敢引用」后才可加入。
+_CONSISTENCY_BLOCKER_KINDS = {"author_mismatch_template"}
 
-# ③类取 consistency 分析器的 Critical issue（作者/品牌身份系统性冲突等）
+# ⑤类最小样本量：有效页面数低于此值不做「全站无日期」推断（原则 3，防样本偏差）
+_FRESHNESS_MIN_SAMPLES = 3
+
+# 每条规则的排除边界（原则 5：评审时逐条核对「什么时候不该触发」）。
+# key 为 blocker key，value 为该规则明确排除、不升 P0 的情形。
+RULE_EXCLUSIONS = {
+    "fetch_failed": ["DNS/网络瞬时抖动由上层重试吸收；这里只认最终抓取结果"],
+    "challenge_page": ["间歇性挑战（偶发拦一次）不算——evidence 标注 inferred，报告端软化措辞"],
+    "no_ssr": ["has_ssr_content 字段缺失（未探测）不算"],
+    "retrieval_bots_blocked": ["训练类爬虫被拦不算（不切断检索通路）"],
+    "thin_content": ["有实质正文但可引用性低不算（内容质量，High）",
+                     "no_ssr 命中时抑制（同根因）"],
+    "no_heading_structure": ["词数 ≥150 不算；no_ssr 命中时抑制"],
+    "consistency:*": ["非白名单 kind 一律 High，不升 P0（原则 1）"],
+    "homepage_zero_jsonld": ["no_ssr 命中时抑制（同根因：无 SSR 必然零 JSON-LD）"],
+    "no_machine_readable_date": ["有效采样页 <3 不算；no_ssr 命中时抑制"],
+    # 以下情形曾误判为 P0，现明确归 High（实体声明丰富度问题，不切断引用通路）：
+    # - 首页有 JSON-LD 但只有 BreadcrumbList 等导航类，无 Organization/WebSite/Product
+    # - 全站无 Organization（AI 可从正文/外链/知识图谱多源识别品牌实体）
+    # - 主页缺 Organization 但子页有（权重分散，entity_graph 仍报 Critical，归 High）
+}
 
 
 def _ok(d) -> bool:
@@ -53,40 +108,59 @@ def _flat_issues(issues: dict) -> list:
     return out
 
 
-def _blocker(key: str, class_key: str, class_name: str, title: str, evidence: str) -> dict:
+def _blocker(key: str, class_key: str, class_name: str, title: str,
+             evidence: str, confidence: str) -> dict:
+    """confidence: deterministic（直检命中即判）| inferred（推断，报告端软化措辞）。"""
+    assert confidence in ("deterministic", "inferred")
     return {"key": key, "class_key": class_key, "class_name": class_name,
-            "title": title, "evidence": evidence}
+            "title": title, "evidence": evidence, "confidence": confidence}
 
 
 def compute_p0_blockers(*, fetch: dict, bots: dict, schema: dict,
                         issues: dict, articles: dict) -> list:
-    """从实测数据计算 P0 阻塞清单。输入缺失/报错时对应类别跳过（不误判）。"""
+    """从实测数据计算 P0 阻塞清单。输入缺失/报错时对应类别跳过（不误判）。
+
+    抑制链（原则 2）：fetch 失败 → ②④⑤ 短路；no_ssr → 抑制
+    thin_content / homepage_zero_jsonld / no_machine_readable_date。
+    """
     blockers = []
 
     # ── ① 抓取通道被切断 ─────────────────────────────────────
+    fetch_failed = False
     if isinstance(fetch, dict) and fetch.get("error"):
+        fetch_failed = True
         blockers.append(_blocker(
             "fetch_failed", "access", "抓取通道被切断",
             "首页抓取失败",
-            f"fetch 返回错误：{fetch.get('error')}"))
+            f"fetch 返回错误：{fetch.get('error')}",
+            "deterministic"))
     elif isinstance(fetch, dict) and isinstance(fetch.get("status_code"), int) \
             and fetch["status_code"] >= 400:
+        fetch_failed = True
         blockers.append(_blocker(
             "fetch_failed", "access", "抓取通道被切断",
             f"首页返回 HTTP {fetch['status_code']}",
-            f"首页 {fetch.get('url') or ''} 状态码 {fetch['status_code']}"))
+            f"首页 {fetch.get('url') or ''} 状态码 {fetch['status_code']}",
+            "deterministic"))
 
-    if _ok(fetch) and fetch.get("challenge_detected"):
+    challenge = _ok(fetch) and fetch.get("challenge_detected")
+    if challenge:
         blockers.append(_blocker(
             "challenge_page", "access", "抓取通道被切断",
             "首页返回人机验证/挑战页",
-            "challenge_detected=true，正文被验证页替代"))
+            "challenge_detected=true，正文被验证页替代"
+            "（单次探测结果，可能为间歇性挑战，建议复测确认）",
+            "inferred"))
 
-    if _ok(fetch) and fetch.get("has_ssr_content") is False:
+    no_ssr = _ok(fetch) and fetch.get("has_ssr_content") is False
+    if no_ssr:
+        wc = fetch.get("word_count") or 0
         blockers.append(_blocker(
             "no_ssr", "access", "抓取通道被切断",
             "首页无 SSR 内容",
-            "服务端渲染后正文仍为空，AI 爬虫（不执行 JS）读不到正文"))
+            f"服务端渲染后正文仍为空（word_count={wc}），"
+            "AI 爬虫（不执行 JS）读不到正文",
+            "deterministic"))
 
     if _ok(bots):
         blocked_retrieval = [p.get("bot") for p in bots.get("probes") or []
@@ -96,72 +170,72 @@ def compute_p0_blockers(*, fetch: dict, bots: dict, schema: dict,
             blockers.append(_blocker(
                 "retrieval_bots_blocked", "access", "抓取通道被切断",
                 f"检索类 AI 爬虫被拦（{len(blocked_retrieval)} 个）",
-                "被拦：" + "、".join(blocked_retrieval)))
+                "被拦：" + "、".join(blocked_retrieval),
+                "deterministic"))
 
-    # ── ② 抓到了但读不出内容 ─────────────────────────────────
-    if _fetch_ok(fetch):
-        wc = fetch.get("word_count") or 0
-        has_headings = bool(fetch.get("heading_structure")) or bool(fetch.get("h1_tags"))
-        if wc < _THIN_WORDS:
-            blockers.append(_blocker(
-                "thin_content", "readability", "抓到但读不出内容",
-                "首页正文极薄",
-                f"首页 word_count={wc}（<{_THIN_WORDS}），无实质正文可供引用"))
-        elif wc < _THIN_WORDS_WITH_NO_HEADINGS and not has_headings:
-            blockers.append(_blocker(
-                "no_heading_structure", "readability", "抓到但读不出内容",
-                "首页正文薄且无任何标题层级",
-                f"首页 word_count={wc}、heading_structure 与 h1 均为空"))
+    # fetch 失败时 ②④⑤ 均无从谈起——短路，只报抓取类（原则 2）
+    if not fetch_failed:
 
-    # ── ③ 读懂了但不敢引用（consistency 分析器的 Critical）─────
-    for it in _flat_issues(issues):
-        if it.get("category") == "consistency" and it.get("severity") == "Critical":
-            blockers.append(_blocker(
-                f"consistency:{it.get('kind')}", "trust", "读懂了但不敢引用",
-                it.get("title") or "身份数据自相矛盾",
-                str((it.get("evidence") or {}))[:300]))
+        # ── ② 抓到了但读不出内容（no_ssr 命中时抑制：无 SSR 必然薄）──
+        if _fetch_ok(fetch) and not no_ssr:
+            wc = fetch.get("word_count") or 0
+            has_headings = bool(fetch.get("heading_structure")) or bool(fetch.get("h1_tags"))
+            if wc < _THIN_WORDS:
+                blockers.append(_blocker(
+                    "thin_content", "readability", "抓到但读不出内容",
+                    "首页正文极薄",
+                    f"首页 word_count={wc}（阈值 <{_THIN_WORDS}），无实质正文可供引用",
+                    "inferred"))
+            elif wc < _THIN_WORDS_WITH_NO_HEADINGS and not has_headings:
+                blockers.append(_blocker(
+                    "no_heading_structure", "readability", "抓到但读不出内容",
+                    "首页正文薄且无任何标题层级",
+                    f"首页 word_count={wc}（阈值 <{_THIN_WORDS_WITH_NO_HEADINGS}）、"
+                    "heading_structure 与 h1 均为空",
+                    "inferred"))
 
-    # ── ④ 实体锚定断裂 ───────────────────────────────────────
-    homepage_zero = False
-    if _fetch_ok(fetch):
-        homepage_sd = fetch.get("structured_data")
-        if isinstance(homepage_sd, list) and len(homepage_sd) == 0:
-            homepage_zero = True
-            blockers.append(_blocker(
-                "homepage_zero_jsonld", "entity", "实体锚定断裂",
-                "首页零 JSON-LD，品牌官方声明页在机器侧空白",
-                "首页抽取到 0 个结构化数据块；AI 建品牌实体优先读首页"))
-    if _ok(schema) and schema.get("has_organization") is False:
-        blockers.append(_blocker(
-            "no_organization_site", "entity", "实体锚定断裂",
-            "全站无 Organization",
-            "所有采样页面均未检出 Organization/LocalBusiness"))
-    for it in _flat_issues(issues):
-        if it.get("category") == "entity_graph" and it.get("kind") in _ENTITY_BLOCKER_KINDS:
-            # 首页零 JSON-LD 必然导致主页缺 Organization——同根因，不重复列
-            if homepage_zero and it.get("kind") == "homepage_missing_organization":
-                continue
-            blockers.append(_blocker(
-                f"entity_graph:{it.get('kind')}", "entity", "实体锚定断裂",
-                it.get("title") or "主页缺 Organization",
-                str((it.get("evidence") or {}))[:300]))
+        # ── ③ 读懂了但不敢引用（consistency 白名单 Critical）────────
+        for it in _flat_issues(issues):
+            if it.get("category") == "consistency" \
+                    and it.get("severity") == "Critical" \
+                    and it.get("kind") in _CONSISTENCY_BLOCKER_KINDS:
+                blockers.append(_blocker(
+                    f"consistency:{it.get('kind')}", "trust", "读懂了但不敢引用",
+                    it.get("title") or "身份数据自相矛盾",
+                    str((it.get("evidence") or {}))[:300],
+                    "deterministic"))
 
-    # ── ⑤ 时效性准阻塞：全站无机器可读日期 ─────────────────────
-    pages = []
-    if _fetch_ok(fetch):
-        pages.append(fetch)
-    if _ok(articles):
-        pages += [p for p in (articles.get("pages") or []) if _fetch_ok(p)]
-        pages += [p for p in (articles.get("product_pages") or []) if _fetch_ok(p)]
-    if pages:
-        def _has_date(p):
-            fr = p.get("freshness") or {}
-            return bool(fr.get("best_date") or fr.get("date_modified") or fr.get("date_published"))
-        if not any(_has_date(p) for p in pages):
-            blockers.append(_blocker(
-                "no_machine_readable_date", "freshness", "时效性准阻塞",
-                "全站无机器可读日期",
-                f"{len(pages)} 个采样页面均无 dateModified/<time>/Last-Modified"))
+        # ── ④ 实体锚定断裂：仅「首页零 JSON-LD」（机器侧完全空白）────
+        # 有 JSON-LD 但缺 Organization/WebSite/Product 是实体声明丰富度
+        # 问题（High），不切断引用通路——AI 可从正文/外链多源识别品牌实体。
+        if _fetch_ok(fetch) and not no_ssr:
+            homepage_sd = fetch.get("structured_data")
+            if isinstance(homepage_sd, list) and len(homepage_sd) == 0:
+                blockers.append(_blocker(
+                    "homepage_zero_jsonld", "entity", "实体锚定断裂",
+                    "首页零 JSON-LD，品牌官方声明页在机器侧空白",
+                    "首页抽取到 0 个结构化数据块；AI 建品牌实体优先读首页",
+                    "deterministic"))
+
+        # ── ⑤ 时效性准阻塞：全站无机器可读日期 ─────────────────────
+        # no_ssr 命中时抑制（无 SSR 必然无日期）；样本 <3 页不判（原则 3）
+        if not no_ssr:
+            pages = []
+            if _fetch_ok(fetch):
+                pages.append(fetch)
+            if _ok(articles):
+                pages += [p for p in (articles.get("pages") or []) if _fetch_ok(p)]
+                pages += [p for p in (articles.get("product_pages") or []) if _fetch_ok(p)]
+            if len(pages) >= _FRESHNESS_MIN_SAMPLES:
+                def _has_date(p):
+                    fr = p.get("freshness") or {}
+                    return bool(fr.get("best_date") or fr.get("date_modified") or fr.get("date_published"))
+                if not any(_has_date(p) for p in pages):
+                    blockers.append(_blocker(
+                        "no_machine_readable_date", "freshness", "时效性准阻塞",
+                        "全站无机器可读日期",
+                        f"{len(pages)} 个采样页面均无 dateModified/<time>/Last-Modified",
+                        "inferred"))
 
     # 按 key 去重（同 key 可能被直检与 issue 双路命中）
     seen, out = set(), []
@@ -173,9 +247,14 @@ def compute_p0_blockers(*, fetch: dict, bots: dict, schema: dict,
 
 
 def p0_blocking_note(blockers: list) -> str:
-    """报告/清单共用的前置判定文案。blockers=None 表示无数据（走旧兜底）。"""
+    """报告/清单共用的前置判定文案。blockers=None 表示无数据（走旧兜底）。
+
+    推断类（inferred）阻塞在文案中标注「疑似」，建议人工复核（原则 4）。
+    """
     if blockers:
-        titles = "；".join(b["title"] for b in blockers[:3])
+        def _label(b):
+            return b["title"] + ("（疑似，建议复测确认）" if b.get("confidence") == "inferred" else "")
+        titles = "；".join(_label(b) for b in blockers[:3])
         more = f" 等 {len(blockers)} 项" if len(blockers) > 3 else ""
         return (f"当前官网不可直接 GEO 优化，包含 {len(blockers)} 项 P0 级阻塞需前置修复："
                 f"{titles}{more}；在这些问题修复之前，其余优化动作难以生效。")
