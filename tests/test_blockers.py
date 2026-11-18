@@ -91,6 +91,63 @@ def test_sameas_empty_not_blocking_when_org_exists():
     assert _run(issues=issues) == []
 
 
+def test_sameas_empty_is_high_not_p0_in_analyzers():
+    """回归：entity_graph 对「有 Organization 但 sameAs 空」定 High，不定 Critical。
+
+    以前定 Critical，导致报告横幅（数 Critical finding 标红）与前置判定文案
+    （按 blockers.py 口径说「可进行 GEO 优化」）打架——creativehit.ai 报告即此。
+    """
+    from diagnose.analyzers.entity_graph import analyze
+
+    signals = {
+        "main_page": {
+            "meta": {"url": {"value": "https://a.com/"}},
+            "entity": {"organization": {"value": {"@type": "Organization",
+                                                  "name": "A", "url": "https://a.com/"}}},
+        },
+        "global": {"entities": {
+            "organizations": [{"@type": "Organization", "name": "A",
+                               "url": "https://a.com/", "page_url": "https://a.com/",
+                               "sameAs": [], "foundingDate": "2020",
+                               "address": {}, "contactPoint": {}}],
+            "persons": [], "products": [], "articles": [],
+        }},
+    }
+    by_kind = {i["kind"]: i for i in analyze(signals)}
+    assert by_kind["organization_no_sameas"]["severity"] == "High"
+
+
+# ── P0 口径校准：横幅与清单必须一致（cap_severity_p0）────────────
+
+def test_cap_demotes_sameas_critical():
+    """agent 把 sameAs 空写成 Critical → 降为 High（不能出现在 P0 清单）。"""
+    from diagnose.blockers import cap_severity_p0
+    assert cap_severity_p0("Critical", "organization_no_sameas") == "High"
+    assert cap_severity_p0("Critical", "") == "High"
+
+
+def test_cap_keeps_deterministic_blockers():
+    """确定性阻塞保持 Critical——它们本来就会让横幅判红。"""
+    from diagnose.blockers import cap_severity_p0
+    for kind in ("fetch_failed", "no_ssr", "retrieval_bots_blocked",
+                 "homepage_zero_jsonld", "author_mismatch_template"):
+        assert cap_severity_p0("Critical", kind) == "Critical"
+
+
+def test_cap_demotes_inferred_blockers():
+    """推断类阻塞（横幅只算「疑似」）不进 P0 清单，否则横幅说「可进行」清单却标红。"""
+    from diagnose.blockers import cap_severity_p0
+    for kind in ("thin_content", "no_heading_structure",
+                 "no_machine_readable_date", "challenge_page"):
+        assert cap_severity_p0("Critical", kind) == "High"
+
+
+def test_cap_leaves_high_untouched():
+    from diagnose.blockers import cap_severity_p0
+    assert cap_severity_p0("High", "anything") == "High"
+    assert cap_severity_p0("Medium", "organization_no_sameas") == "Medium"
+
+
 # ── 实体声明丰富度问题 → High 非 P0（P0 锚在引用失败，不在形式缺失）────
 
 def test_breadcrumb_only_homepage_not_blocking():

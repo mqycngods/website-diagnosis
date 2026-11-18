@@ -204,6 +204,11 @@ def _format_analyzer_evidence(it: dict) -> str:
     return f"经页面扫描确认：{title}。影响范围涉及 {pc} 个页面。"
 
 
+def _blocker_list(raw) -> list:
+    """p0_blockers 归一为 list：报错 dict / 缺失一律当空清单（模板退回 findings 口径）。"""
+    return raw if isinstance(raw, list) else []
+
+
 def _issues_to_findings(issues: dict) -> list:
     """把分析器产出的 issues 字典转成 findings 列表，输出通顺的分析性中文证据。"""
     if not isinstance(issues, dict):
@@ -326,6 +331,19 @@ def build_report_from_dict(data: dict, domain: str, url: str,
     from diagnose.context import derive_site_freshness
     fetch = derive_site_freshness(fetch, articles)
 
+    # P0 阻塞判定：render 路径同样现算一遍（规则同源），这样没有 analyze
+    # 阶段 p0_blockers 的旧数据也能得到确定性口径——横幅的「疑似阻塞」提示
+    # 与「P0 清单」是否出现必须来自同一份结果。
+    blockers = data.get("p0_blockers")
+    if not isinstance(blockers, list):
+        try:
+            from diagnose.blockers import compute_p0_blockers
+            blockers = compute_p0_blockers(
+                fetch=fetch, bots=bots, schema=schema, issues=issues, articles=articles)
+        except Exception as e:  # 判定失败不阻断渲染，退回 findings 口径
+            print(f"[build] ⚠️ P0 阻塞判定失败：{e}", file=sys.stderr)
+            blockers = []
+
     # 六维得分：ScoreEngine 统一处理（agent override 优先，确定性 baseline 兜底）
     baselines = compute_baselines(
         citability=citability, bots=bots, technical=technical, schema=schema)
@@ -338,6 +356,24 @@ def build_report_from_dict(data: dict, domain: str, url: str,
 
     # findings：来自 agent scores.json（中文） + 分析器产出的 issues（新）
     findings = []
+    # P0 口径校准：blockers.py 的规则是唯一裁判。上游（agent scores.json /
+    # 分析器）可以写 Critical，但只有 P0 白名单内的问题能以「P0 立即修复」
+    # 出现在行动清单——否则「可进行 GEO 优化」横幅会与红色 P0 清单自相矛盾。
+    from diagnose.blockers import cap_severity_p0 as _cap_p0
+
+    def _finding_kind(f: dict) -> str:
+        """从 finding 标题推断 issue kind（agent 写的 finding 没有 kind 字段）。"""
+        t = (f.get("title") or "").lower()
+        if "sameas" in t:
+            return "organization_no_sameas"
+        if "作者署名" in t and ("冲突" in t or "不一致" in t):
+            return "author_mismatch_template"
+        if re.search(r"无\s*ssr|服务端渲染|空壳|仅.*js", t):
+            return "no_ssr"
+        if "structured_data" in t or "json-ld" in t or "结构化数据" in t:
+            return "homepage_zero_jsonld"
+        return ""
+
     # 1. agent 的 findings（权重最高）
     agent_titles = set()
     for f in (scores.get("findings", []) if _ok(scores) else []):
@@ -347,7 +383,8 @@ def build_report_from_dict(data: dict, domain: str, url: str,
             title=t, evidence=f.get("evidence", ""),
             impact=f.get("impact", ""), fix=f.get("fix", ""),
             confidence=f.get("confidence", "Confirmed"),
-            severity=f.get("severity", "Medium"), layer=f.get("layer", ""),
+            severity=_cap_p0(f.get("severity", "Medium"), f.get("kind") or _finding_kind(f)),
+            layer=f.get("layer", ""),
         ))
 
     # 2. 通用分析器的 issues（去重：若 agent 已经写了同根因条目，跳过）
@@ -409,7 +446,8 @@ def build_report_from_dict(data: dict, domain: str, url: str,
                 title=t, evidence=af.get("evidence", ""),
                 impact=af.get("impact", ""), fix=af.get("fix", ""),
                 confidence=af.get("confidence", "Confirmed"),
-                severity=af.get("severity", "Medium"), layer=af.get("layer", "page"),
+                severity=_cap_p0(af.get("severity", "Medium"), af.get("_kind", "")),
+                layer=af.get("layer", "page"),
             ))
 
     if not findings:
@@ -511,7 +549,7 @@ def build_report_from_dict(data: dict, domain: str, url: str,
         "medium_term": [asdict(a) for a in medium],
         "strategic": [asdict(a) for a in strat],
         # P0 阻塞判定（规则同源）：analyze 阶段确定性算出；None 表示旧数据，走 Critical 兜底
-        "p0_blockers": data.get("p0_blockers"),
+        "p0_blockers": blockers,
     }
 
     # 调用 RecommendationEngine 生成客户报告数据
@@ -556,16 +594,9 @@ def build_report_from_dict(data: dict, domain: str, url: str,
         # report_builder 失败时降级：使用基础数据
         print(f"[build] ⚠️ report_builder 失败：{e}，使用降级数据", file=sys.stderr)
         # 降级路径同样给出 P0 前置修改判定，保证报告/清单总结区不空。
-        # 优先读 analyze 阶段算好的 p0_blockers（规则同源），旧数据回退到 Critical 计数。
+        # blockers 已在上面现算过（规则同源），直接复用。
         from diagnose.blockers import p0_blocking_note as _p0_note
-        _blockers = data.get("p0_blockers")
-        if isinstance(_blockers, list):
-            p0_note = _p0_note(_blockers)
-        else:
-            p0_count = sum(1 for f in findings if getattr(f, "severity", "") == "Critical")
-            p0_note = _p0_note(None) if p0_count == 0 else (
-                f"当前官网不可直接 GEO 优化，包含 {p0_count} 项 P0 级任务需修改后进行；"
-                "在这些问题修复之前，其余优化动作难以生效。")
+        p0_note = _p0_note(_blocker_list(blockers))
         executive_summary = ExecutiveSummary(
             geo_score=geo, label=label, label_zh=ZH_LABEL.get(label, label),
             overall_assessment=scores.get("description", "") if _ok(scores) else "",
@@ -593,6 +624,7 @@ def build_report_from_dict(data: dict, domain: str, url: str,
         priority_actions=priority_actions,
         roadmap=roadmap,
         chart_visibility=chart_visibility,
+        p0_blockers=_blocker_list(blockers),
     )
 
     return report

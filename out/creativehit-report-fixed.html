@@ -1,0 +1,1749 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>creativehit.ai — GEO 官网优化报告 · 2026-11-18</title>
+<style>
+:root{
+  --paper:#ebe6da;--white:#fffdf8;--warm:#f4efe5;--warm-2:#efe9dc;--surface:#faf7f0;
+  --ink:#27231f;--ink-2:#4a443b;--muted:#7d7466;--faint:#9a9081;
+  --line:#ded6c8;--line-soft:#e7dfd1;--line-strong:#d3c9b8;
+  --brown:#211d1a;--orange:#c9552c;--orange-deep:#a8431f;
+  --green:#52765e;--green-bg:#e9efe8;--green-line:#c2d2c1;
+  --amber:#a96a34;--amber-bg:#f6ecdc;--amber-line:#e4cfae;
+  --red:#a75b4a;--red-bg:#f5e6e1;--red-line:#e0bfb5;
+  --blue:#5b7ba7;--blue-bg:#e6ecf4;--blue-line:#c3cfdf;
+  --r-sm:7px;--r-md:10px;--r-lg:14px;
+  --shadow:0 1px 2px rgba(61,48,34,.05),0 10px 28px rgba(61,48,34,.06);
+  --shadow-flat:0 1px 2px rgba(61,48,34,.04);
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  --serif:Georgia,"Songti SC","STSong",serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;background:var(--paper)}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.75 "PingFang SC","Microsoft YaHei",Arial,sans-serif;-webkit-font-smoothing:antialiased}
+h1,h2,h3,p{margin-top:0}
+a{color:inherit;text-underline-offset:3px;word-break:break-all}
+.cover{padding:36px 24px;background:linear-gradient(135deg,#201c19 0%,#211d1a 56%,#2a211d 100%);color:#f7f2e9;position:relative;overflow:hidden}
+.cover:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 83% 20%,rgba(201,85,44,.12),transparent 30%);pointer-events:none}
+.cover-inner{position:relative;width:min(1045px,100%);margin:auto}
+.eyebrow{margin:0;color:#d7663c;font:700 11px/1.4 var(--mono);letter-spacing:.18em;text-transform:uppercase}
+.cover h1{margin:18px 0 0;font:400 clamp(38px,4.5vw,60px)/1.05 var(--serif);letter-spacing:-.045em;color:#fbf7ef;overflow-wrap:anywhere}
+.cover h1 .report-title{display:block;margin-top:14px;color:#a69d92;font:400 clamp(15px,1.8vw,19px)/1.4 "PingFang SC",sans-serif;letter-spacing:.02em}
+.layout{width:min(1240px,100%);margin:auto;display:grid;grid-template-columns:210px minmax(0,1fr);gap:32px;padding:48px 24px 80px}
+.toc{position:sticky;top:24px;align-self:start;padding:12px 0 12px 20px;border-left:1px solid var(--line-strong)}
+.toc h2{margin:0 0 14px;color:var(--faint);font:700 11px/1.4 var(--mono);letter-spacing:.14em;text-transform:uppercase}
+.toc-group{margin-bottom:14px}
+.toc-group:last-child{margin-bottom:0}
+.toc-group-title{margin:0 0 6px;color:var(--ink);font:700 11.5px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.toc-group-priority .toc-group-title{color:var(--orange)}
+.toc-group-appendix .toc-group-title{color:var(--faint)}
+.toc a{display:block;padding:4px 0 4px 12px;color:var(--muted);text-decoration:none;font-size:12px;line-height:1.45;border-left:1px solid transparent;margin-left:-1px}
+.toc a:hover{color:var(--orange)}
+.toc a.toc-sub{position:relative}
+.toc a.toc-sub:before{content:"";position:absolute;left:0;top:50%;width:6px;height:1px;background:var(--line-strong);transform:translateY(-50%)}
+.content{min-width:0}
+
+/* ── Report Group 层级（LEVEL 1 > LEVEL 2 > LEVEL 3 视觉降级）── */
+/* Group wrapper：一组 section 的容器，形成视觉分组 */
+.report-group{margin-bottom:36px}
+.report-group:last-child{margin-bottom:0}
+
+/* Group header：在整组之上建立一级层级 */
+.group-head{display:flex;align-items:baseline;gap:14px;margin:0 0 18px;padding:0 4px}
+.group-no{color:var(--orange);font:italic 400 20px/1 var(--serif)}
+.group-head h2{margin:0;font:400 22px/1.3 var(--serif);letter-spacing:-.02em;color:var(--ink)}
+.group-head p{margin:0;color:var(--muted);font-size:12px}
+.group-tag{margin-left:auto;padding:2px 8px;border-radius:4px;font:700 10px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--warm)}
+
+/* 不同 Group 的视觉权重 */
+.report-group-executive .group-head h2{font-size:24px}
+.report-group-priority .group-head h2{color:var(--orange)}
+.report-group-appendix .group-head h2{color:var(--muted);font-size:18px}
+.report-group-appendix .group-no{color:var(--faint)}
+
+/* P0 前置修改判定横幅：置于总览之前，全报告最先看到的结论 */
+.p0-gate{margin:0 0 28px;padding:20px 24px;border:1px solid var(--red-line);border-left:4px solid var(--red);border-radius:var(--r-md);background:var(--red-bg);scroll-margin-top:20px}
+.p0-gate.has-blocking{background:var(--red-bg)}
+.p0-gate.no-blocking{background:var(--green-bg);border-color:var(--green-line);border-left-color:var(--green)}
+.p0-gate-label{margin:0 0 6px;font:700 10.5px/1.4 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--red)}
+.p0-gate.no-blocking .p0-gate-label{color:var(--green)}
+.p0-gate-body{margin:0;font-size:14.5px;line-height:1.75;color:var(--ink)}
+.p0-gate-jump{display:inline-flex;align-items:center;gap:6px;margin-top:14px;padding:7px 14px;border:1px solid var(--red);border-radius:var(--r-sm);background:var(--white);color:var(--red);font:700 12px/1.4 var(--mono);letter-spacing:.04em;text-decoration:none;cursor:pointer;transition:background .15s,color .15s}
+.p0-gate-jump:hover{background:var(--red);color:#fff}
+#p0-tier{scroll-margin-top:20px}
+
+/* 组内 section 微调：executive 突出，appendix 降级 */
+.report-group-executive .section{box-shadow:var(--shadow)}
+.report-group-appendix .section{background:var(--surface);box-shadow:var(--shadow-flat);border-style:dashed}
+.report-group-appendix .section-head{border-bottom-style:dashed}
+.report-group-appendix .section-head h2{color:var(--ink-2)}
+
+.section{padding:40px 32px 44px;margin:0 0 24px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--white);box-shadow:var(--shadow);scroll-margin-top:20px}
+.report-group .section:last-child{margin-bottom:0}
+.section-head{display:flex;align-items:flex-start;gap:16px;margin-bottom:26px;padding-bottom:20px;border-bottom:1px solid var(--line-soft)}
+.section-no{flex:0 0 auto;color:var(--orange);font:italic 24px/1.15 var(--serif)}
+.section-head h2{margin:0 0 6px;color:var(--ink);font:400 26px/1.25 var(--serif);letter-spacing:-.02em}
+.section-head p{margin-bottom:0;color:var(--muted);font-size:13px;line-height:1.7}
+.section-tag{margin-left:auto;flex:0 0 auto;align-self:center;padding:4px 12px;border-radius:999px;font:700 11px/1.5 var(--mono);letter-spacing:.06em}
+
+/* 子章节头（Group 内二级 section 使用，视觉权重低于 section-head） */
+.sub-head{display:flex;align-items:center;gap:12px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px dashed var(--line-soft)}
+.sub-head h3{margin:0 0 4px;color:var(--ink-2);font:400 19px/1.3 var(--serif);letter-spacing:-.01em}
+.sub-head p{margin:0;color:var(--muted);font-size:12px;line-height:1.6}
+.verdict{padding:28px;border:1px solid var(--line-soft);border-left:3px solid var(--orange);border-radius:var(--r-md);background:var(--warm)}
+.verdict small{color:var(--orange);font:700 11px/1.4 var(--mono);letter-spacing:.12em;text-transform:uppercase}
+.verdict h3{margin:14px 0 10px;font:400 22px/1.5 var(--serif)}
+.verdict p{margin-bottom:0;color:var(--ink-2);font-size:14px;line-height:1.8}
+.scoreboard{display:grid;grid-template-columns:264px minmax(0,1fr);border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);overflow:hidden;box-shadow:var(--shadow-flat)}
+.total{padding:24px 22px;color:#f8f3ea;background:var(--brown)}
+.total .score-label{display:block;margin-bottom:8px;color:#8f877d;font:700 10px/1.4 var(--mono);letter-spacing:.16em;text-transform:uppercase}
+.total b{display:block;font:400 56px/.95 var(--serif);letter-spacing:-.04em}
+.total .score-max{color:#8f877d;font:400 18px/1 var(--serif)}
+.total strong{display:inline-block;margin-top:12px;padding:3px 10px;border:1px solid rgba(228,160,128,.4);border-radius:999px;color:#e4a080;font:400 13px/1.5 var(--serif)}
+.bars{padding:20px 24px;background:var(--white);display:flex;flex-direction:column;justify-content:center}
+.chart-radar{width:100%;height:340px}
+.total-gauge{margin-top:4px}
+.chart.chart-gauge{height:230px}
+.bar-label{display:flex;justify-content:space-between;margin-bottom:6px;color:var(--ink-2);font-size:13px;font-weight:600}
+.bar-score{color:var(--muted);font:500 12px/1.4 var(--mono)}
+.track{height:5px;border-radius:999px;background:var(--warm-2);overflow:hidden}
+.track i{display:block;height:100%;background:var(--orange);border-radius:999px}
+.track i.green{background:var(--green)}.track i.amber{background:var(--amber)}.track i.red{background:var(--red)}
+.card{border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);box-shadow:var(--shadow-flat);overflow:hidden;margin-bottom:16px}
+.card>header{padding:16px 22px;background:var(--warm);border-bottom:1px solid var(--line-soft);display:flex;justify-content:space-between;align-items:center;gap:16px}
+.card>header h3{margin:0;font:400 17px/1.4 var(--serif)}
+.card .pad{padding:16px 22px}
+.status{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font:700 11px/1.5 var(--mono);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;border:1px solid}
+.status.good{color:var(--green);background:var(--green-bg);border-color:var(--green-line)}
+.status.warn{color:var(--amber);background:var(--amber-bg);border-color:var(--amber-line)}
+.status.bad{color:var(--red);background:var(--red-bg);border-color:var(--red-line)}
+.status.info{color:var(--blue);background:var(--blue-bg);border-color:var(--blue-line)}
+.finding{border:1px solid var(--line);border-left:3px solid var(--orange);border-radius:var(--r-md);background:#fffdf8;margin-bottom:14px;overflow:hidden}
+.finding.sev-Critical{border-left-color:var(--red)}
+.finding.sev-High{border-left-color:var(--orange)}
+.finding.sev-Medium{border-left-color:var(--amber)}
+.finding.sev-Low{border-left-color:var(--green)}
+.finding header{padding:13px 20px;display:flex;align-items:center;gap:12px;background:var(--warm)}
+.finding header h4{margin:0;color:var(--ink);font:600 14.5px/1.5 "PingFang SC",sans-serif}
+.finding header .sev{margin-left:auto}
+.finding .rows{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--line)}
+.finding .rows>div{padding:13px 20px;min-width:0}
+.finding .rows>div+div{border-left:1px solid var(--line)}
+.finding .rows .full{grid-column:1/-1}
+.finding .rows .full+div{border-left:0;border-top:1px solid var(--line)}
+.finding h5{margin:0 0 6px;color:var(--faint);font:700 10px/1.5 var(--mono);letter-spacing:.12em;text-transform:uppercase}
+.finding p{margin:0;color:var(--ink-2);font-size:13px;line-height:1.7;overflow-wrap:anywhere;word-break:break-word}
+
+/* ── 附录折叠 Finding ─────────────────────────────────── */
+.finding-fold{border:1px solid var(--line);border-radius:var(--r-md);background:#fffdf8;margin-bottom:10px;overflow:hidden}
+.finding-fold-summary{cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:12px;padding:13px 20px;background:var(--warm);transition:background .15s}
+.finding-fold-summary:hover{background:var(--warm-2)}
+.finding-fold-summary::-webkit-details-marker{display:none}
+.finding-fold-summary .fold-icon{flex:0 0 auto;display:inline-block;transition:transform .15s;font-size:10px;color:var(--muted)}
+.finding-fold[open] .finding-fold-summary .fold-icon{transform:rotate(90deg)}
+.finding-fold-title{flex:1;min-width:0;font:600 14px/1.5 "PingFang SC",sans-serif;color:var(--ink);overflow-wrap:anywhere;word-break:break-word}
+.finding-fold-summary .sev{margin-left:auto;flex:0 0 auto}
+.finding-fold-body{border-top:1px solid var(--line)}
+.finding-col{padding:16px 20px;min-width:0}
+.finding-col + .finding-col{border-top:1px solid var(--line-soft)}
+.finding-col h5{margin:0 0 8px;color:var(--faint);font:700 10px/1.5 var(--mono);letter-spacing:.12em;text-transform:uppercase}
+.finding-col p{margin:0;color:var(--ink-2);font-size:13px;line-height:1.7;overflow-wrap:anywhere;word-break:break-word}
+/* 附录 · meta 纯文本行（置信度 · 层级 · 返回链接） */
+.finding-meta{display:flex;align-items:center;padding:12px 20px;font-size:11px;color:var(--faint);border-bottom:1px solid var(--line-soft)}
+.finding-meta .appendix-back{margin-left:auto;font-size:11px;color:var(--orange);text-decoration:none}
+.finding-meta .appendix-back:hover{text-decoration:underline}
+/* 附录 · 修复建议（橙色标题突出） */
+.finding-fix-head{display:flex;align-items:baseline}
+.finding-fix h5{color:var(--orange);font-weight:700}
+.finding-fix h5::before{content:"→ ";font-weight:400}
+.finding-owner{margin-left:auto;font:500 10.5px/1.5 var(--mono);color:var(--faint)}
+/* 附录 · 代码示例深色终端风（在修复建议内部，不独占行） */
+.finding-fix .code-fold{margin-top:10px}
+.finding-fix .code-fold summary{cursor:pointer;user-select:none;list-style:none;display:inline-flex;align-items:center;gap:5px;padding:0;background:none;border:none;font:700 10px/1.5 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--orange);transition:color .15s}
+.finding-fix .code-fold summary:hover{color:var(--orange-deep)}
+.finding-fix .code-fold summary .fold-icon{font-size:10px;transition:transform .15s}
+.finding-fix .code-fold[open] summary .fold-icon{transform:rotate(90deg)}
+.finding-fix .code-example{margin-top:8px;padding:12px 14px;background:#211d1a;border-radius:var(--r-sm);overflow-x:auto}
+.finding-fix .code-example code{font:13px/1.6 var(--mono);color:#e4a080;white-space:pre}
+/* 自由文本容器统一断词：证据/建议/路线图等常含超长无空格 token（URL、语言代码串） */
+.finding p,.priority-body p,.priority-header h4,.page-rec-item p,.page-rec-item h4,
+.roadmap-actions li,.roadmap-desc,.verdict p,.bigflag p,.bigflag h3,.plan-item p,
+.top-priority p,.top-priority h4,.chart-card .pad p,table.data td{overflow-wrap:anywhere;word-break:break-word}
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+.chart-grid .span2{grid-column:1/-1}
+.chart-grid .view-fold{margin-top:0}
+.chart-card{border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);box-shadow:var(--shadow-flat);overflow:hidden}
+.chart-card header{padding:14px 20px;background:var(--warm);border-bottom:1px solid var(--line-soft)}
+.chart-card header h3{margin:0;font:400 16px/1.4 var(--serif)}
+.chart-card header small{display:block;margin-top:2px;color:var(--muted);font-size:11.5px}
+.chart-body{padding:8px 12px 14px;min-height:110px}
+/* 非图表的文本型内容体：与卡片头（14/20）水平对齐，补足四周留白 */
+.chart-card .pad{padding:16px 20px 20px}
+.chart{width:100%;height:280px}
+.chart.tall{height:330px}.chart.short{height:200px}
+.chart-fallback{padding:26px 22px;color:var(--muted);font-size:13px;line-height:1.7;background:var(--surface);border:1px dashed var(--line-strong);border-radius:var(--r-md);text-align:center}
+.chart-fallback b{color:var(--ink-2)}
+table.data{width:100%;border-collapse:collapse;font-size:12.5px}
+table.data th{padding:8px 10px;text-align:left;color:var(--faint);font:700 10px/1.5 var(--mono);letter-spacing:.1em;text-transform:uppercase;border-bottom:1px solid var(--line-strong)}
+table.data td{padding:8px 10px;border-bottom:1px solid var(--line-soft);color:var(--ink-2);vertical-align:top;line-height:1.55}
+table.data tr:last-child td{border-bottom:0}
+/* 省略号单元格：单行截断 + hover 亮出完整 title */
+.ellipsis{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:top;cursor:pointer}
+td.col-ellipsis{max-width:0}  /* 配合 table-layout:fixed 生效 */
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.dot.green{background:var(--green)}.dot.amber{background:var(--amber)}.dot.red{background:var(--red)}.dot.grey{background:var(--faint)}.dot.blue{background:var(--blue)}
+.bigflag{padding:18px 22px;border-radius:var(--r-md);border:1px solid;margin-bottom:16px}
+.bigflag.bad{background:var(--red-bg);border-color:var(--red-line)}
+.bigflag.good{background:var(--green-bg);border-color:var(--green-line)}
+.bigflag h3{margin:0 0 6px;font:400 17px/1.4 var(--serif)}
+.bigflag.bad h3{color:var(--red)}.bigflag.good h3{color:var(--green)}
+.bigflag p{margin:0;font-size:13px;color:var(--ink-2)}
+.plan-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.plan-col{border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);overflow:hidden}
+.plan-col>header{padding:14px 18px;background:var(--warm);border-bottom:1px solid var(--line-soft)}
+.plan-col>header h3{margin:0;font:400 16px/1.4 var(--serif)}
+.plan-col>header small{color:var(--muted);font-size:11.5px}
+.plan-item{padding:14px 18px;border-bottom:1px solid var(--line-soft)}
+.plan-item:last-child{border-bottom:0}
+.plan-item p{margin:0 0 8px;font-size:13px;color:var(--ink);font-weight:600;line-height:1.5}
+.plan-item .meta{display:flex;gap:6px;flex-wrap:wrap}
+.plan-item .meta span{padding:2px 8px;border:1px solid var(--line-soft);border-radius:4px;background:var(--surface);font:500 10.5px/1.6 var(--mono);color:var(--muted)}
+.plan-item .meta span:first-child{border-color:var(--orange-soft,#f1d4c8);background:#faf0ea;color:var(--orange-deep);font-weight:700}
+footer{padding:36px 24px;text-align:center;color:var(--muted);border-top:1px solid var(--line)}
+footer strong{color:var(--ink-2);font:400 16px var(--serif);letter-spacing:.04em}
+
+/* ── 新增：优先级卡片 ──────────────────────────────────── */
+.priority-card{border:1px solid var(--line);border-left:3px solid var(--orange);border-radius:var(--r-md);background:#fffdf8;margin-bottom:14px;overflow:hidden}
+.priority-card.P0{border-left-color:var(--red)}
+.priority-card.P1{border-left-color:var(--orange)}
+.priority-card.P2{border-left-color:var(--amber)}
+.priority-card.P3{border-left-color:var(--green)}
+.priority-header{padding:13px 20px;display:flex;align-items:center;gap:12px;background:var(--warm)}
+.priority-header h4{margin:0;color:var(--ink);font:600 14.5px/1.5 "PingFang SC",sans-serif}
+.priority-header .priority-tag{margin-left:auto;flex:0 0 auto;padding:3px 10px;border-radius:999px;font:700 11px/1.5 var(--mono);letter-spacing:.04em}
+.priority-tag.P0{color:var(--red);background:var(--red-bg);border:1px solid var(--red-line)}
+.priority-tag.P1{color:var(--orange);background:var(--amber-bg);border:1px solid var(--orange-line)}
+.priority-tag.P2{color:var(--amber);background:var(--amber-bg);border:1px solid var(--amber-line)}
+.priority-tag.P3{color:var(--green);background:var(--green-bg);border:1px solid var(--green-line)}
+.priority-body{padding:13px 20px}
+.priority-body p{margin:0 0 8px;font-size:13px;color:var(--ink-2);line-height:1.7}
+.priority-body .code-example{margin-top:12px;padding:14px 16px;background:#211d1a;border-radius:var(--r-sm);overflow-x:auto}
+.priority-body .code-example code{font:11px/1.6 var(--mono);color:#e4a080;white-space:pre}
+
+/* ── 新增：页面建议 ───────────────────────────────────── */
+.page-type-head{margin:18px 0 12px;padding:0 0 8px;border-bottom:1px solid var(--line-soft);font:600 13px/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.page-type-head:first-of-type{margin-top:0}
+.page-rec{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:16px}
+.page-rec-item{border:1px solid var(--line);border-radius:var(--r-md);padding:16px 20px;background:var(--white);box-shadow:var(--shadow-flat)}
+.page-rec-item .page-type{display:inline-block;padding:2px 8px;border-radius:4px;background:var(--warm);color:var(--ink-3);font:600 10px/1.4 var(--mono);text-transform:uppercase;margin-bottom:8px}
+.page-rec-item h4{margin:0 0 8px;font:600 14px/1.4 "PingFang SC",sans-serif}
+.page-rec-item p{margin:0 0 8px;font-size:12.5px;color:var(--ink-2);line-height:1.7}
+.page-rec-item .rec-text{font-size:12.5px;color:var(--muted);line-height:1.7}
+.code-fold summary:hover{background:rgba(0,0,0,.07)!important;color:var(--ink)!important}
+.code-fold summary::-webkit-details-marker{display:none}
+.code-fold[open] summary .fold-icon{transform:rotate(90deg)}
+.code-fold[open] summary .fold-label::after{content:"（点击收起）"}
+.code-fold:not([open]) summary .fold-label::after{content:""}
+
+/* ── 新增：Roadmap 路线图 ──────────────────────────────── */
+.roadmap{position:relative;padding-left:28px;margin-bottom:24px}
+.roadmap:before{content:"";position:absolute;left:9px;top:0;bottom:0;width:2px;background:var(--line-strong)}
+.roadmap-phase{position:relative;margin-bottom:24px}
+.roadmap-phase:before{content:"";position:absolute;left:-23px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--orange);border:2px solid var(--white)}
+.roadmap-phase.phase-1:before{background:var(--red)}
+.roadmap-phase.phase-2:before{background:var(--orange)}
+.roadmap-phase.phase-3:before{background:var(--green)}
+.roadmap-header{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}
+.roadmap-header h3{margin:0;font:600 16px/1.4 "PingFang SC",sans-serif}
+.roadmap-header .phase-tag{padding:2px 8px;border-radius:4px;background:var(--warm);color:var(--ink-3);font:600 10px/1.4 var(--mono)}
+.roadmap-desc{color:var(--muted);font-size:13px;margin-bottom:10px}
+.roadmap-actions{list-style:none;margin:0;padding:0}
+.roadmap-actions li{position:relative;padding:6px 0 6px 20px;font-size:13px;color:var(--ink-2);border-bottom:1px solid var(--line-soft)}
+.roadmap-actions li:last-child{border-bottom:0}
+.roadmap-actions li:before{content:"→";position:absolute;left:0;color:var(--orange)}
+
+/* ── 新增：Top Priorities 优先事项 ────────────────────── */
+.top-priority{display:flex;gap:16px;padding:20px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);margin-bottom:14px;box-shadow:var(--shadow-flat)}
+.top-priority .priority-num{flex:0 0 auto;width:40px;height:40px;border-radius:50%;background:var(--warm);color:var(--orange);font:600 16px/40px var(--serif);text-align:center}
+.top-priority .priority-content{flex:1}
+.top-priority h4{margin:0 0 6px;font:600 15px/1.4 "PingFang SC",sans-serif}
+.top-priority p{margin:0;font-size:13px;color:var(--ink-2);line-height:1.7}
+
+/* ── Top Issue（决策层）：Priority 组的核心卡片 ─────────── */
+/* 三张卡片视觉权重一致，阅读路径：标题 + chips + 交叉引用 → 为什么重要 → 证据 → 建议动作 */
+.top-issue{border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow-flat)}
+
+.top-issue-head{display:flex;align-items:center;gap:16px;padding:16px 24px;background:var(--warm);border-bottom:1px solid var(--line-soft)}
+.top-issue-headline{flex:1;min-width:0}
+.top-issue-title{margin:0;font:600 16px/1.45 "PingFang SC",sans-serif;color:var(--ink);letter-spacing:-.005em}
+
+/* 交叉引用：放在 header 右端，与标题垂直居中对齐 */
+.issue-crossref{flex:0 0 auto;margin-left:auto;font-size:12px;line-height:1.45;color:var(--muted);white-space:nowrap}
+.issue-crossref a{color:var(--orange);text-decoration:none;font-weight:500}
+.issue-crossref a:hover{text-decoration:underline}
+
+/* 单列垂直流 */
+.top-issue-body{padding:4px 0}
+.issue-block{padding:12px 24px;border-bottom:1px dashed var(--line-soft)}
+.issue-block:last-child{border-bottom:0}
+.issue-block h5{margin:0 0 6px;color:var(--faint);font:700 10.5px/1.5 var(--mono);letter-spacing:.14em;text-transform:uppercase}
+.issue-block p{margin:0;font-size:13.5px;color:var(--ink-2);line-height:1.75;overflow-wrap:anywhere;word-break:break-word}
+
+/* 建议动作：作为视觉终点，整块高亮（暖色渐变背景） */
+.issue-fix{margin:10px 16px 12px;background:linear-gradient(135deg, #f4efe5 0%, #f6ecdc 100%);border:1px solid #e4cfae;border-radius:var(--r-sm);padding:14px 20px}
+.issue-fix h5{color:var(--orange)}
+.issue-fix p{color:var(--ink);font-weight:500}
+
+/* ═══════════ 行动方案（GROUP 03 统一行动卡片）═══════════ */
+.action-tier{margin-bottom:28px}
+.action-tier:last-of-type{margin-bottom:0}
+.action-tier-head{display:flex;align-items:baseline;gap:12px;margin:0 0 8px;padding:0}
+.action-tier-title{margin:0;font:600 12px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.action-tier-P0 .action-tier-title{color:var(--red)}
+.action-tier-P1 .action-tier-title{color:var(--orange)}
+.action-tier-P2 .action-tier-title{color:var(--amber)}
+.action-tier-P3 .action-tier-title{color:var(--green)}
+.action-tier-hint{color:var(--muted);font-size:11px}
+
+/* 行动卡片：视觉与 top-issue 对齐，带 ID anchor */
+.action-card{border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);margin-bottom:14px;overflow:hidden;box-shadow:var(--shadow-flat);scroll-margin-top:20px}
+.action-card-head{display:flex;align-items:center;gap:14px;padding:14px 22px;background:var(--warm);border-bottom:1px solid var(--line-soft)}
+.action-card-id{flex:0 0 auto;color:var(--orange);font:700 12px/1.4 var(--mono);letter-spacing:.06em;min-width:32px}
+.action-card-P0 .action-card-id{color:var(--red)}
+.action-card-P1 .action-card-id{color:var(--orange)}
+.action-card-P2 .action-card-id{color:var(--amber)}
+.action-card-P3 .action-card-id{color:var(--green)}
+.action-card-title{margin:0;flex:1;font:600 15px/1.45 "PingFang SC",sans-serif;color:var(--ink)}
+.action-card-meta{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.action-chip{padding:2px 8px;border-radius:4px;font:600 10px/1.5 var(--mono);letter-spacing:.04em;background:var(--surface);color:var(--muted);border:1px solid var(--line-soft);white-space:nowrap}
+.action-chip.impact-high{color:var(--red);background:var(--red-bg);border-color:var(--red-line)}
+.action-chip.impact-med{color:var(--amber);background:var(--amber-bg);border-color:var(--amber-line)}
+.action-chip.impact-low{color:var(--green);background:var(--green-bg);border-color:var(--green-line)}
+
+.action-card-body{padding:4px 0}
+.action-block{padding:12px 22px;border-bottom:1px dashed var(--line-soft)}
+.action-block:last-child{border-bottom:0}
+.action-block h6{margin:0 0 6px;color:var(--faint);font:700 10.5px/1.5 var(--mono);letter-spacing:.14em;text-transform:uppercase}
+.action-block p{margin:0;font-size:13.5px;color:var(--ink-2);line-height:1.75;overflow-wrap:anywhere;word-break:break-word}
+
+.action-fix{margin:10px 16px 12px;background:linear-gradient(135deg, #f4efe5 0%, #f6ecdc 100%);border:1px solid #e4cfae;border-radius:var(--r-sm);padding:14px 20px}
+.action-fix h6{color:var(--orange)}
+.action-fix p{color:var(--ink);font-weight:500}
+
+/* 行动卡内代码示例 */
+.action-fix .code-fold{margin-top:12px}
+.action-fix .code-fold summary{cursor:pointer;user-select:none;list-style:none;display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(0,0,0,.04);border:1px solid var(--line);border-radius:var(--r-sm);font:12px var(--sans);color:var(--muted);transition:background .15s}
+.action-fix .code-fold summary:hover{background:rgba(0,0,0,.07);color:var(--ink)}
+.action-fix .code-fold summary::-webkit-details-marker{display:none}
+.action-fix .code-fold[open] summary .fold-icon{transform:rotate(90deg)}
+.action-fix .code-fold .fold-icon{display:inline-block;transition:transform .15s;font-size:10px}
+.action-fix .code-example{margin-top:8px;padding:12px;background:#211d1a;border-radius:var(--r-sm);overflow-x:auto}
+.action-fix .code-example code{font:11px/1.6 var(--mono);color:#e4a080;white-space:pre}
+
+/* 折叠视图（按页面） */
+.view-fold{margin-top:20px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);overflow:hidden;box-shadow:var(--shadow-flat)}
+.view-fold-summary{cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:12px;padding:14px 22px;background:var(--warm);transition:background .15s}
+.view-fold-summary:hover{background:var(--warm-2)}
+.view-fold-summary::-webkit-details-marker{display:none}
+.view-fold-summary .fold-icon{flex:0 0 auto;display:inline-block;transition:transform .15s;font-size:10px;color:var(--muted)}
+.view-fold[open] .view-fold-summary .fold-icon{transform:rotate(90deg)}
+.view-fold-title{font:600 14px/1.4 "PingFang SC",sans-serif;color:var(--ink)}
+.view-fold-hint{margin-left:auto;font-size:11.5px;color:var(--muted)}
+.view-fold-body{padding:18px 22px;border-top:1px solid var(--line-soft)}
+
+.view-group{margin-bottom:18px}
+.view-group:last-child{margin-bottom:0}
+.view-group-title{margin:0 0 8px;font:600 12px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.view-group-desc{margin:0 0 10px;font-size:12px;color:var(--muted)}
+.view-group-owner{margin:10px 0 0;font-size:11.5px;color:var(--muted)}
+
+/* Issue 引用列表（只列编号 + 短标题 + 锚点链接） */
+.issue-ref-list{list-style:none;margin:0;padding:0}
+.issue-ref-item{display:flex;align-items:baseline;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line-soft);font-size:13px;color:var(--ink-2);line-height:1.6}
+.issue-ref-item:last-child{border-bottom:0}
+.issue-ref-id{flex:0 0 auto;font:700 11px/1.5 var(--mono);letter-spacing:.06em;color:var(--orange);text-decoration:none;padding:2px 6px;border-radius:3px;background:var(--warm);border:1px solid var(--line-soft)}
+.issue-ref-id:hover{background:var(--warm-2);text-decoration:underline}
+.issue-ref-id.issue-ref-independent{color:var(--muted);background:var(--surface);cursor:default}
+.issue-ref-id.issue-ref-independent:hover{background:var(--surface);text-decoration:none}
+.issue-ref-title{flex:1;min-width:0;overflow-wrap:anywhere;word-break:break-word}
+.issue-ref-detail{color:var(--muted);font-size:12px}
+.issue-ref-jump{flex:0 0 auto;color:var(--orange);font-size:13px;opacity:.6;transition:opacity .15s;text-decoration:none}
+.issue-ref-item:hover .issue-ref-jump{opacity:1}
+.issue-ref-jump:hover{text-decoration:none;color:var(--orange-deep)}
+/* 非 finding 行动：可展开行（badge + ▶ 展开全文） */
+.issue-ref-details{flex:1;min-width:0}
+.issue-ref-details summary{cursor:pointer;user-select:none;list-style:none;display:flex;align-items:baseline;gap:10px}
+.issue-ref-details summary::-webkit-details-marker{display:none}
+.issue-ref-details[open] .issue-ref-expand-icon{transform:rotate(90deg)}
+.issue-ref-badge{flex:0 0 auto;font:700 10px/1.5 var(--mono);letter-spacing:.06em;color:var(--muted);padding:2px 6px;border-radius:3px;background:var(--surface);border:1px solid var(--line-soft)}
+.issue-ref-expand-icon{flex:0 0 auto;font-size:9px;color:var(--faint);transition:transform .15s}
+.issue-ref-full{margin:8px 0 4px;padding-left:36px;font-size:12.5px;color:var(--ink-2);line-height:1.7}
+
+/* ── 各维度得分理由（GEO 就绪度评分下方折叠面板）───────── */
+.dim-note-list{list-style:none;margin:0;padding:0}
+.dim-note-item{padding:12px 0;border-bottom:1px dashed var(--line-soft)}
+.dim-note-item:last-child{border-bottom:0}
+.dim-note-head{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
+.dim-note-name{font:600 14px/1.4 "PingFang SC",sans-serif;color:var(--ink)}
+.dim-note-weight{font:500 10.5px/1.4 var(--mono);letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.dim-note-score{margin-left:auto;font:400 18px/1.2 var(--serif);color:var(--orange)}
+.dim-note-max{font-size:12px;color:var(--muted)}
+.dim-note-text{margin:0;font-size:13px;color:var(--ink-2);line-height:1.7;overflow-wrap:anywhere;word-break:break-word}
+.dim-note-empty{color:var(--faint);font-style:italic}
+
+@media(max-width:760px){
+  .top-issue-head{flex-wrap:wrap;gap:10px}
+  .issue-crossref{margin-left:0}
+  .action-card-head{flex-wrap:wrap}
+  .action-card-meta{margin-left:0;width:100%}
+}
+
+@media(max-width:1050px){
+  .layout{grid-template-columns:1fr;padding:32px 20px 64px}
+  .toc{display:none}
+  .scoreboard{grid-template-columns:1fr}
+  .chart-grid{grid-template-columns:1fr}
+  .plan-grid{grid-template-columns:1fr}
+  .page-rec{grid-template-columns:1fr}
+}
+@media print{
+  .cover{min-height:auto;padding:28px 24px;background:#201c19!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .toc{display:none}
+  .section,.card,.finding,.chart-card{break-inside:avoid;box-shadow:none!important}
+  body{background:#fff}
+}
+
+/* 优化方向 ·「示例」链接 + 全局 tooltip（挂在 body 下，不被 .card overflow:hidden 截断） */
+.hint-link{display:inline-block;padding:2px 8px;border:1px solid var(--orange);border-radius:3px;color:var(--orange);font-size:11px;text-decoration:none;cursor:pointer;background:#fffdf8;line-height:1.5;transition:background .15s,color .15s}
+.hint-link:hover{background:var(--orange);color:#fff}
+/* 章节标题旁的感叹号 icon（hover 显示副标题） */
+.sub-head-title-row{display:flex;align-items:center;gap:6px}
+.sub-head-title-row h3{margin:0}
+span.hint-icon{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1px solid var(--muted);border-radius:50%;color:var(--muted);font:500 9px/12px var(--mono);cursor:pointer;flex:0 0 auto;transition:color .15s,border-color .15s;box-sizing:border-box;text-align:center}
+span.hint-icon:hover{color:var(--orange);border-color:var(--orange)}
+#hint-tip{position:fixed;z-index:1000;display:none;max-width:360px;padding:12px 14px;background:#fffdf8;border:1px solid var(--line-strong);border-radius:6px;box-shadow:0 6px 20px rgba(39,35,31,.12);color:var(--ink);font-size:12px;line-height:1.7;pointer-events:none;white-space:normal;text-align:left}
+
+/* 行动清单 · 标签切换（嵌入 sub-head 右端） */
+.action-tabs{display:inline-flex;gap:0;margin:0;margin-left:auto;border:1px solid var(--line);border-radius:5px;overflow:hidden;background:var(--surface);flex:0 0 auto}
+.action-tab{padding:5px 12px;background:transparent;border:none;font:500 11.5px/1.5 "PingFang SC",sans-serif;color:var(--muted);cursor:pointer;transition:background .15s,color .15s;border-right:1px solid var(--line)}
+.action-tab:last-child{border-right:none}
+.action-tab:hover{color:var(--ink);background:var(--warm)}
+.action-tab.active{color:var(--orange);background:var(--white);font-weight:600}
+.action-view{display:none}
+.action-view.active{display:block}
+
+/* 附录 · 返回链接与高亮动画 */
+.appendix-back{margin-left:auto;font-size:12px;color:var(--orange);text-decoration:none}
+.appendix-back:hover{text-decoration:underline}
+.finding-meta-row{display:flex;gap:6px;align-items:center;padding:12px 22px 0;margin-bottom:4px}
+@keyframes appendix-flash{0%{background:#fdf3e7}100%{background:#fffdf8}}
+.finding-fold.flash{animation:appendix-flash 1.5s ease-out}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+
+<header class="cover">
+  <div class="cover-inner">
+    <p class="eyebrow">GEO 官网优化报告 · 2026-11-18</p>
+    <h1>creativehit.ai<span class="report-title">诊断 · 分析 · 建议</span></h1>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="toc">
+    <h2>报告目录</h2>
+
+    <div class="toc-group">
+      <div class="toc-group-title">01 总览</div>
+      <a href="#p0-gate" class="toc-sub">P0 前置修改判定</a>
+      <a href="#geo-score" class="toc-sub">分析总结 · GEO 就绪度评分</a>
+    </div>
+
+    <div class="toc-group">
+      <div class="toc-group-title">02 诊断分析</div>
+      <a href="#crawler-access" class="toc-sub">AI 爬虫可达性</a>
+      <a href="#technical" class="toc-sub">技术基础与内容时效</a>
+      <a href="#schema" class="toc-sub">品牌识别与 Schema</a>
+      <a href="#ai-citability" class="toc-sub">内容质量与引用度</a>
+    </div>
+
+    <div class="toc-group toc-group-priority">
+      <div class="toc-group-title">03 行动方案</div>
+      <a href="#action-plan" class="toc-sub">行动清单</a>
+    </div>
+
+    <div class="toc-group toc-group-appendix">
+      <div class="toc-group-title">附录</div>
+      <a href="#appendix" class="toc-sub">问题技术证据</a>
+    </div>
+  </aside>
+
+  <main class="content">
+    <div class="p0-gate no-blocking" id="p0-gate">
+      <p class="p0-gate-label">P0 前置修改判定</p>
+      <p class="p0-gate-body">可进行 GEO 优化。另有 1 项疑似阻塞待确认：首页正文极薄——建议复测后再定优先级。</p>
+    </div>
+
+    <div class="report-group report-group-executive" id="group-executive">
+      <header class="group-head">
+        <span class="group-no">01</span>
+        <h2>总览</h2>
+        <p>Executive Overview · 10 秒看清 GEO 现状</p>
+        
+      </header>
+<section class="section" id="geo-score">
+  <div class="sub-head">
+  <div class="sub-head-title-row"><h3>分析总结 · GEO 就绪度评分</h3><span class="hint-icon" data-hint="核心判断 + 五维就绪度评分（引用度 31.25% · 内容 25% · 技术 18.75% · Schema 12.5% · 爬虫 12.5%）。">!</span></div>
+<span class="section-tag status warn">偏弱</span></div>
+
+
+  <article class="verdict" style="margin-bottom:24px">
+    <small>核心判断</small>
+    <p>CreativeHit AI 是一个 AI 广告创意生成工具站。技术底座整体健康：HTTPS 就位、12 个 AI 爬虫 UA 重放全部 200 放行、robots.txt 与 sitemap 配置正确、已部署 llms.txt。核心短板集中在「首页 SSR 内容极度稀薄」（正文仅 31 词，无 H1，无可引用段落，导致首页可引用性实测为 0）与「品牌实体锚定缺失」（Organization 无 sameAs、无 foundingDate/address/contactPoint，无 Wikipedia/Wikidata 词条，外部平台账号待复核）。文章侧已有较好的 Article + Person schema 基础与较高的内容质量（抽样最长文章 1888 词），但 Article.description 在 5 个采样页面全部为空，且全站缺 WebSite / BreadcrumbList / FAQPage。短期修复优先级：首页 SSR 内容增厚与 H1 注入、Organization 补 sameAs、Article.description 模板修复。</p>
+  </article>
+
+  <div class="scoreboard" style="margin-bottom:24px">
+    <aside class="total">
+      <span class="score-label">官网 GEO 诊断评分</span>
+      <b>46<span class="score-max"> / 100</span></b>
+      <strong>偏弱</strong>
+      <div class="total-gauge">
+<div id="chart-gauge" class="chart chart-gauge"></div>      </div>
+    </aside>
+    <div class="bars">
+<div id="chart-radar" class="chart-radar"></div>    </div>
+  </div>
+
+  <details class="view-fold">
+    <summary class="view-fold-summary">
+      <span class="fold-icon">▶</span>
+      <span class="view-fold-title">各维度得分理由</span>
+      <span class="view-fold-hint">每个维度为什么是这个分数</span>
+    </summary>
+    <div class="view-fold-body">
+      <ul class="dim-note-list">
+        <li class="dim-note-item">
+          <div class="dim-note-head">
+            <span class="dim-note-name">内容引用度</span>
+            <span class="dim-note-weight">权重 31.25%</span>
+            <span class="dim-note-score">8<span class="dim-note-max"> / 100</span></span>
+          </div>
+          <p class="dim-note-text">首页 SSR 正文仅 31 词、无 H1、无任何 ≥20 词的可引用段落，citability 实测均分 0；文章页正文质量尚可（抽样最长 1888 词、含 TL;DR），但首页作为最高权重入口基本无法被 AI 引用。</p>
+        </li>
+        <li class="dim-note-item">
+          <div class="dim-note-head">
+            <span class="dim-note-name">内容质量</span>
+            <span class="dim-note-weight">权重 25.00%</span>
+            <span class="dim-note-score">55<span class="dim-note-max"> / 100</span></span>
+          </div>
+          <p class="dim-note-text">文章正文质量中上：采样 5 篇中 1 篇 1888 词、含明确 TL;DR 与结构化对比框架；4 篇偏短（223–252 词）仅为产品动态与概念短文。有 Person 作者署名（Maya Chen、Daniel Park、Sofia Ramirez）但无作者简介页与外部身份锚点；首页正文稀薄，整体 E-E-A-T 信号被拉低。</p>
+        </li>
+        <li class="dim-note-item">
+          <div class="dim-note-head">
+            <span class="dim-note-name">技术基础</span>
+            <span class="dim-note-weight">权重 18.75%</span>
+            <span class="dim-note-score">68<span class="dim-note-max"> / 100</span></span>
+          </div>
+          <p class="dim-note-text">HTTPS 已启用、HSTS 在位、sitemap 可达且含 22 条 URL、最新 lastmod=2026-10-09、llms.txt 已部署。扣分项：首页正文为 SPA 渲染 SSR 内容稀薄（仅 31 词）、缺 CSP/X-Frame-Options/X-Content-Type-Options/Referrer-Policy/Permissions-Policy 等 5 项安全响应头。</p>
+        </li>
+        <li class="dim-note-item">
+          <div class="dim-note-head">
+            <span class="dim-note-name">品牌识别与 Schema</span>
+            <span class="dim-note-weight">权重 12.50%</span>
+            <span class="dim-note-score">38<span class="dim-note-max"> / 100</span></span>
+          </div>
+          <p class="dim-note-text">关键类型覆盖 5/11：Organization / SoftwareApplication / Article / Person / WebPage 已 Present，无 Broken。但 Organization 缺 sameAs（实测 0 条）与 foundingDate/address/contactPoint；Wikipedia/Wikidata API 均无词条；缺 WebSite、BreadcrumbList、FAQPage；Article.description 字段在 5 个采样文章页全部为空（模板级 bug）。</p>
+        </li>
+        <li class="dim-note-item">
+          <div class="dim-note-head">
+            <span class="dim-note-name">爬虫可达性</span>
+            <span class="dim-note-weight">权重 12.50%</span>
+            <span class="dim-note-score">100<span class="dim-note-max"> / 100</span></span>
+          </div>
+          <p class="dim-note-text">12 个 AI 爬虫 UA（GPTBot/OAI-SearchBot/ChatGPT-User/ClaudeBot/Claude-SearchBot/Claude-User/PerplexityBot/Perplexity-User/GoogleBot/BingBot/CCBot/Amazonbot）重放全部返回 200、内容相似度 1.0，未检出 WAF 拦截；四类爬虫（training/search-index/live-retrieval/traditional-search）分类得分全部 100。</p>
+        </li>
+      </ul>
+    </div>
+  </details>
+</section>    </div>
+
+    <div class="report-group report-group-diagnosis" id="group-diagnosis">
+      <header class="group-head">
+        <span class="group-no">02</span>
+        <h2>诊断分析</h2>
+        <p>GEO Diagnosis · 逐层定位问题根因</p>
+        
+      </header>
+<section class="section" id="crawler-access">
+  <div class="sub-head">
+  <div class="sub-head-title-row"><h3>AI 爬虫可达性</h3><span class="hint-icon" data-hint="以真实 UA 重放实测每个爬虫收到的响应（非 robots.txt 推断），并对照 robots.txt 声明策略。涵盖 crawler 可达性、robots.txt、crawlability。">!</span></div>
+<span class="section-tag status good">完全开放</span></div>
+
+
+  <div class="bigflag good">
+    <h3>整体态势：完全开放 · 100/100</h3>
+    <p>
+      实测 12 个爬虫，0 个受阻。
+    </p>
+  </div>
+
+  <details class="code-fold" style="border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);overflow:hidden">
+    <summary style="cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:10px;padding:14px 20px;background:var(--warm);font-size:13px;color:var(--muted)">
+      <span class="fold-icon" style="display:inline-block;transition:transform .15s;font-size:10px">▶</span>
+      <span class="fold-label"><b style="color:var(--ink)">12/12 全部可达</b> · 逐爬虫实测明细（点击展开）</span>
+    </summary>
+    <table class="data">
+      <thead><tr><th>爬虫</th><th>类别</th><th>HTTP</th><th>相似度</th><th>实测状态</th><th>robots 声明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>GPTBot</b><br><small style="color:var(--faint)">OpenAI</small></td>
+          <td>训练</td>
+          <td>200</td>
+          <td>1.0</td>
+          <td>
+<span class="status good">可达</span>          </td>
+          <td><small style="color:var(--muted)">ALLOWED_BY_DEFAULT</small></td>
+        </tr>
+        <tr>
+          <td><b>OAI-SearchBot</b><br><small style="color:var(--faint)">OpenAI</small></td>
+          <td>搜索索引</td>
+          <td>200</td>
+          <td>1.0</td>
+          <td>
+<span class="status good">可达</span>          </td>
+          <td><small style="color:var(--muted)">ALLOWED_BY_DEFAULT</small></td>
+        </tr>
+        <tr>
+          <td><b>ChatGPT-User</b><br><small style="color:var(--faint)">OpenAI</small></td>
+          <td>实时检索</td>
+          <td>200</td>
+          <td>1.0</td>
+          <td>
+<span class="status good">可达</span>          </td>
+          <td><small style="color:var(--muted)">ALLOWED_BY_DEFAULT</small></td>
+        </tr>
+        <tr>
+          <td><b>ClaudeBot</b><br><small style="color:var(--faint)">Anthropic</small></td>
+          <td>训练</td>
+          <td>200</td>
+          <td>1.0</td>
+          <td>
+<span class="status good">可达</span>          </td>
+          <td><small style="color:var(--muted)">ALLOWED_BY_DEFAULT</small></td>
+        </tr>
+        <tr>
+          <td><b>Claude-SearchBot</b><br><small style="color:var(--faint)">Anthropic</small></td>
+          <td>搜索索引</td>
+          <td>200</td>
+          <td>1.0</td>
+          <td>
+<span class="status good">可达</span>          </td>
+          <td><small style="color:var(--muted)">ALLOWED_BY_DEFAULT</small></td>
+        </tr>
+        <tr>
+          <td><b>Claude-User</b><br><small style="color:var(--faint)">Anthropic</small></td>
+          <td>实时检索</td>
+          <td>200</td>
+          <td>1.0</td>
+          <td>
+<span class="status good">可达</span>          </td>
+          <td><small style="color:var(--muted)">ALLOWED_BY_DEFAULT</small></td>
+        </tr>
+        <tr>
+          <td><b>PerplexityBot</b><br><small style="color:var(--faint)">Perplexity</small></td>
+          <td>搜索索引</td>
+          <td>200</td>
+          <td>1.0</td>
+          <td>
+<span class="status good">可达</span>          </td>
+          <td><small style="color:var(--muted)">ALLOWED_BY_DEFAULT</small></td>
+        </tr>
+        <tr>
+          <td><b>Perplexity-User</b><br><small style="color:var(--faint)">Perplexity</small></td>
+          <td>实时检索</td>
+          <td>200</td>
+          <td>1.0</td>
+          <td>
+<span class="status good">可达</span>          </td>
+          <td><small style="color:var(--muted)">ALLOWED_BY_DEFAULT</small></td>
+        </tr>
+        <tr>
+          <td><b>GoogleBot</b><br><small style="color:var(--faint)">Google</small></td>
+          <td>传统搜索</td>
+          <td>200</td>
+          <td>1.0</td>
+          <td>
+<span class="status good">可达</span>          </td>
+          <td><small style="color:var(--muted)">ALLOWED_BY_DEFAULT</small></td>
+        </tr>
+        <tr>
+          <td><b>BingBot</b><br><small style="color:var(--faint)">Microsoft</small></td>
+          <td>传统搜索</td>
+          <td>200</td>
+          <td>1.0</td>
+          <td>
+<span class="status good">可达</span>          </td>
+          <td><small style="color:var(--muted)">ALLOWED_BY_DEFAULT</small></td>
+        </tr>
+        <tr>
+          <td><b>CCBot</b><br><small style="color:var(--faint)">Common Crawl</small></td>
+          <td>训练</td>
+          <td>200</td>
+          <td>1.0</td>
+          <td>
+<span class="status good">可达</span>          </td>
+          <td><small style="color:var(--muted)">ALLOWED_BY_DEFAULT</small></td>
+        </tr>
+        <tr>
+          <td><b>Amazonbot</b><br><small style="color:var(--faint)">Amazon</small></td>
+          <td>搜索索引</td>
+          <td>200</td>
+          <td>1.0</td>
+          <td>
+<span class="status good">可达</span>          </td>
+          <td><small style="color:var(--muted)">ALLOWED_BY_DEFAULT</small></td>
+        </tr>
+      </tbody>
+    </table>
+  </details>
+</section><section class="section" id="technical">
+  <div class="sub-head">
+  <div class="sub-head-title-row"><h3>技术基础与内容时效</h3><span class="hint-icon" data-hint="HTTPS、安全响应头、llms.txt 与内容新鲜度信号。安全头是信任信号；新鲜度影响 AI 对内容时效性的判断。">!</span></div>
+<span class="section-tag status warn">68/100</span></div>
+
+
+  <div class="bigflag warn">
+    <h3>✅ HTTPS 已启用 · ⚠️ 安全头 1/6 已配置 · 综合 68/100</h3>
+<p style="margin:6px 0 0;font-size:12.5px;color:var(--ink-2)">安全头缺失项见下方矩阵，可在 Cloudflare Transform Rules 统一补齐。</p>  </div>
+
+  <div class="chart-grid">
+    <div class="chart-card">
+      <header><h3>安全响应头矩阵</h3><small>直接来自实测响应头</small></header>
+      <table class="data" style="margin:8px 0">
+        <thead><tr><th>响应头</th><th>状态</th><th>权重</th></tr></thead>
+        <tbody>
+          <tr>
+            <td style="font-family:var(--mono);font-size:11px">HSTS</td>
+            <td><span class="dot green"></span>已配置</td>
+            <td>10</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--mono);font-size:11px">CSP</td>
+            <td><span class="dot red"></span>缺失</td>
+            <td>10</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--mono);font-size:11px">X-Frame-Options</td>
+            <td><span class="dot red"></span>缺失</td>
+            <td>5</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--mono);font-size:11px">X-Content-Type-Options</td>
+            <td><span class="dot red"></span>缺失</td>
+            <td>5</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--mono);font-size:11px">Referrer-Policy</td>
+            <td><span class="dot red"></span>缺失</td>
+            <td>5</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--mono);font-size:11px">Permissions-Policy</td>
+            <td><span class="dot red"></span>缺失</td>
+            <td>3</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="chart-card">
+      <header><h3>llms.txt 状态</h3><small>新兴规范 · 非计分信号</small></header>
+      <div class="pad">
+        <p style="margin:8px 0;font-size:13.5px"><span class="dot green"></span>/llms.txt 已发布</p>
+        <p style="margin:8px 0;font-size:13.5px"><span class="dot grey"></span>/llms-full.txt 缺失</p>
+        <p style="font-size:12px;color:var(--muted);margin-top:12px">llms.txt 是面向 AI 的内容指南，类似 robots.txt。对开发者向站点有用；目前非引用杠杆。</p>
+      </div>
+    </div>
+    <div class="chart-card span2">
+      <header><h3>内容新鲜度信号</h3><small>AI 偏好近期更新的内容 · 90 天内为新鲜 · 365 天以上为陈旧</small></header>
+      <div class="pad">
+        <p style="margin:6px 0;font-size:13.5px">
+          <span class="dot green"></span>
+          最近更新：<b>2026-10-09</b>（距今 3 天 · 新鲜）
+        </p>
+<p style="font-size:12px;color:var(--muted);margin:4px 0">首页无机器可读日期，取最新鲜的内容页：<a href="https://creativehit.ai/blog/ai-creative-workflow-platforms" target="_blank" rel="noopener">https://creativehit.ai/blog/ai-creative-workflow-platforms</a></p>        <p style="font-size:12px;color:var(--muted);margin:8px 0 0">来源：structured_data。为所有内容页补 &lt;time datetime&gt; 或 Article dateModified，帮助 AI 验证时效性。</p>
+      </div>
+    </div>
+  </div>
+</section><section class="section" id="schema">
+  <div class="sub-head">
+  <div class="sub-head-title-row"><h3>品牌识别与 Schema</h3><span class="hint-icon" data-hint="JSON-LD 清单、GEO 关键类型覆盖与 sameAs 实体链接。涵盖 Organization / WebSite / Product / WebPage / Breadcrumb / 品牌实体一致性。">!</span></div>
+<span class="section-tag status good">5 类型</span></div>
+
+
+  <div class="chart-grid">
+    <div class="chart-card">
+      <header><h3>覆盖概览 <span class="hint-icon" data-hint="统计 GEO 关键 Schema 类型（Organization / WebSite / LocalBusiness / Article / Product / FAQPage / BreadcrumbList / Person / Service）在已抓取页面中的覆盖情况。已具备 = 检测到该类型 JSON-LD；缺失 = 已抓宿主页但未检测到；未采样 = 宿主页未被抓取，无法判定。">!</span></h3></header>
+      <div class="pad" style="text-align:center">
+        <p style="margin:0 0 4px;font-size:12px;color:var(--muted)">6 个 JSON-LD 块 · 5 种类型</p>
+        <p style="margin:0 0 12px;font-size:12px;color:var(--muted)">采样：首页 + 5 文章页（未含产品页）</p>
+        <div style="min-height:52px;display:table;width:100%">
+          <div style="display:table-cell;vertical-align:middle;text-align:center">
+            <b style="font:400 40px/1 var(--serif);color:var(--green)">5</b>
+            <span style="color:var(--muted);font-size:13px"> 已具备 / </span>
+            <b style="font:400 40px/1 var(--serif);color:var(--red)">4</b>
+            <span style="color:var(--muted);font-size:13px"> 缺失</span><span style="color:var(--muted);font-size:13px"> / </span><b style="font:400 40px/1 var(--serif);color:var(--faint)">2</b>
+            <span style="color:var(--muted);font-size:13px"> 未采样</span>          </div>
+        </div>
+      </div>
+    </div>
+    <div class="chart-card">
+      <header><h3>sameAs 实体链接 <span class="hint-icon" data-hint="从所有 JSON-LD 块中提取 sameAs 属性的 URL 数量。sameAs 是 Organization / Person schema 中声明「这个实体也在这些平台存在」的链接（如 Wikipedia、LinkedIn、Crunchbase），是 GEO 中最有影响力的单一属性——帮助 AI 引擎把网站与知识图谱中的实体绑定，消除品牌歧义。">!</span></h3></header>
+      <div class="pad" style="text-align:center">
+        <p style="margin:0 0 4px;font-size:12px;color:var(--muted)">GEO 最有影响力的单一属性</p>
+        <p style="margin:0 0 12px;font-size:12px;color:var(--muted)">链接站外权威资料，帮助 AI 确认品牌实体</p>
+        <div style="min-height:52px;display:table;width:100%">
+          <div style="display:table-cell;vertical-align:middle;text-align:center">
+            <b style="font:400 40px/1 var(--serif);color:var(--red)">0</b>
+            <span style="color:var(--muted);font-size:13px"> 条 sameAs 链接</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="view-fold span2">
+      <summary class="view-fold-summary">
+        <span class="fold-icon">▶</span>
+        <span class="view-fold-title">GEO 关键 Schema 覆盖情况</span>
+        <span class="view-fold-hint">按页面分组：已实测页面缺哪些标记 · 未采样页面类型标「待补采」</span>
+      </summary>
+      <div class="view-fold-body">
+
+
+
+      <div class="schema-tabs" style="margin-top:8px;border:1px solid var(--line);border-radius:8px;overflow:hidden">
+        <div class="schema-tabs-nav" style="display:flex;border-bottom:1px solid var(--line);background:rgba(0,0,0,.02)">
+          <button type="button" class="schema-tab-btn" data-tab="pages" style="flex:1;padding:10px 12px;background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:500">
+            📄 页面 Schema 缺失 <span style="margin-left:4px;padding:1px 6px;background:rgba(198,40,40,.12);color:#c62828;border-radius:8px;font-size:11px">4</span>
+          </button>
+        </div>
+
+
+
+        <div class="schema-tab-pane" data-pane="pages" style="display:none;padding:14px 16px">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--paper);opacity:1">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                <div>
+                  <b style="font-size:14px">首页</b>
+                  <code style="font:11px var(--mono);color:var(--muted);margin-left:8px">/</code>
+                </div>
+                  <span style="font-size:11px;color:var(--green);font-weight:500">✓ 已实测</span>
+              </div>
+
+
+                <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">
+                  <span style="font-size:11.5px;padding:3px 9px;border-radius:4px;background:rgba(46,125,50,.08);color:var(--green);border:1px solid rgba(46,125,50,.2)">✓ Organization</span>
+                </div>
+                <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+                  <div style="font-size:12px;display:flex;align-items:baseline;gap:8px">
+                    <span style="color:var(--red)">✗</span>
+                    <span style="color:var(--ink)">缺 <b>WebSite</b></span>
+                    <span style="color:var(--muted);font-size:11px">· 影响 Medium</span>
+                  </div>
+                  <div style="font-size:12px;display:flex;align-items:baseline;gap:8px">
+                    <span style="color:var(--red)">✗</span>
+                    <span style="color:var(--ink)">缺 <b>BreadcrumbList</b></span>
+                    <span style="color:var(--muted);font-size:11px">· 影响 Medium</span>
+                  </div>
+                </div>
+            </div>
+            <div style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:transparent;opacity:0.75">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                <div>
+                  <b style="font-size:14px">关于页</b>
+                  <code style="font:11px var(--mono);color:var(--muted);margin-left:8px">/about-us</code>
+                </div>
+                  <span style="font-size:11px;color:var(--faint)">ⓘ 本次未采样</span>
+              </div>
+
+                <p style="margin:8px 0 0;font-size:12px;color:var(--muted)">本次未采到该类页面，以下 Schema 状态<strong>未知</strong>（既非缺失也非已具备）：</p>
+                <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">
+                  <span style="font-size:11.5px;padding:3px 9px;border-radius:4px;background:rgba(0,0,0,.04);color:var(--muted);border:1px dashed var(--line)">? Organization</span>
+                  <span style="font-size:11.5px;padding:3px 9px;border-radius:4px;background:rgba(0,0,0,.04);color:var(--muted);border:1px dashed var(--line)">? LocalBusiness</span>
+                  <span style="font-size:11.5px;padding:3px 9px;border-radius:4px;background:rgba(0,0,0,.04);color:var(--muted);border:1px dashed var(--line)">? Person</span>
+                </div>
+                <p style="margin:8px 0 0;font-size:11.5px;color:var(--faint)">→ 建议补采 <code style="font:11px var(--mono)"></code> 以确认状态</p>
+            </div>
+            <div style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:transparent;opacity:0.75">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                <div>
+                  <b style="font-size:14px">联系页</b>
+                  <code style="font:11px var(--mono);color:var(--muted);margin-left:8px">/contact-us</code>
+                </div>
+                  <span style="font-size:11px;color:var(--faint)">ⓘ 本次未采样</span>
+              </div>
+
+                <p style="margin:8px 0 0;font-size:12px;color:var(--muted)">本次未采到该类页面，以下 Schema 状态<strong>未知</strong>（既非缺失也非已具备）：</p>
+                <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">
+                  <span style="font-size:11.5px;padding:3px 9px;border-radius:4px;background:rgba(0,0,0,.04);color:var(--muted);border:1px dashed var(--line)">? LocalBusiness</span>
+                  <span style="font-size:11.5px;padding:3px 9px;border-radius:4px;background:rgba(0,0,0,.04);color:var(--muted);border:1px dashed var(--line)">? Organization</span>
+                </div>
+                <p style="margin:8px 0 0;font-size:11.5px;color:var(--faint)">→ 建议补采 <code style="font:11px var(--mono)"></code> 以确认状态</p>
+            </div>
+            <div style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:transparent;opacity:0.75">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                <div>
+                  <b style="font-size:14px">产品详情页</b>
+                  <code style="font:11px var(--mono);color:var(--muted);margin-left:8px">/products/...</code>
+                </div>
+                  <span style="font-size:11px;color:var(--faint)">ⓘ 本次未采样</span>
+              </div>
+
+                <p style="margin:8px 0 0;font-size:12px;color:var(--muted)">本次未采到该类页面，以下 Schema 状态<strong>未知</strong>（既非缺失也非已具备）：</p>
+                <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">
+                  <span style="font-size:11.5px;padding:3px 9px;border-radius:4px;background:rgba(0,0,0,.04);color:var(--muted);border:1px dashed var(--line)">? Product</span>
+                  <span style="font-size:11.5px;padding:3px 9px;border-radius:4px;background:rgba(0,0,0,.04);color:var(--muted);border:1px dashed var(--line)">? Service</span>
+                  <span style="font-size:11.5px;padding:3px 9px;border-radius:4px;background:rgba(0,0,0,.04);color:var(--muted);border:1px dashed var(--line)">? BreadcrumbList</span>
+                </div>
+                <p style="margin:8px 0 0;font-size:11.5px;color:var(--faint)">→ 建议补采 <code style="font:11px var(--mono)">/products 列表下任一详情页</code> 以确认状态</p>
+            </div>
+            <div style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--paper);opacity:1">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                <div>
+                  <b style="font-size:14px">文章页</b>
+                  <code style="font:11px var(--mono);color:var(--muted);margin-left:8px">/news/...</code>
+                </div>
+                  <span style="font-size:11px;color:var(--green);font-weight:500">✓ 已实测</span>
+              </div>
+
+
+                <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">
+                  <span style="font-size:11.5px;padding:3px 9px;border-radius:4px;background:rgba(46,125,50,.08);color:var(--green);border:1px solid rgba(46,125,50,.2)">✓ Article（含 NewsArticle/BlogPosting）</span>
+                  <span style="font-size:11.5px;padding:3px 9px;border-radius:4px;background:rgba(46,125,50,.08);color:var(--green);border:1px solid rgba(46,125,50,.2)">✓ Person</span>
+                </div>
+                <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+                  <div style="font-size:12px;display:flex;align-items:baseline;gap:8px">
+                    <span style="color:var(--red)">✗</span>
+                    <span style="color:var(--ink)">缺 <b>BreadcrumbList</b></span>
+                    <span style="color:var(--muted);font-size:11px">· 影响 Medium</span>
+                  </div>
+                </div>
+            </div>
+
+            <div style="border:1px dashed var(--line);border-radius:8px;padding:12px 14px;background:rgba(0,0,0,.02)">
+              <div style="display:flex;align-items:baseline;gap:8px">
+                <b style="font-size:13px">FAQPage</b>
+                <span style="font-size:11px;color:var(--muted)">· 影响 Medium</span>
+              </div>
+              <p style="margin:6px 0 0;font-size:12px;color:var(--muted)">全站未发布 FAQ 页（见「功能页发现」章节），无从标记。建议先建 <code style="font:11px var(--mono)">/faq</code> 页再补此 Schema。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+      (function(){
+        var root = document.currentScript.previousElementSibling;
+        if (!root || !root.classList.contains('schema-tabs')) {
+          root = document.querySelector('.schema-tabs');
+        }
+        if (!root) return;
+        var btns = root.querySelectorAll('.schema-tab-btn');
+        var panes = root.querySelectorAll('.schema-tab-pane');
+        if (!btns.length) return;
+        function activate(name){
+          btns.forEach(function(b){
+            var active = b.dataset.tab === name;
+            b.style.borderBottomColor = active ? 'var(--ink)' : 'transparent';
+            b.style.color = active ? 'var(--ink)' : 'var(--muted)';
+            b.style.fontWeight = active ? '600' : '500';
+          });
+          panes.forEach(function(p){
+            p.style.display = p.dataset.pane === name ? '' : 'none';
+          });
+        }
+        btns.forEach(function(b){
+          b.addEventListener('click', function(){ activate(b.dataset.tab); });
+        });
+        var first = btns[btns.length - 1].dataset.tab;  // 默认显示最后一个（页面 Schema 缺失）
+        if (root.querySelector('[data-tab="syntax"]')) first = 'syntax';
+        else if (root.querySelector('[data-tab="field"]')) first = 'field';
+        activate(first);
+      })();
+      </script>
+
+      <p style="margin:12px 0 0;padding:10px 12px;background:rgba(46,125,50,.04);font-size:12px;color:var(--muted)">
+        <b style="color:var(--ink)">阅读说明：</b>「语法错误」与「字段级质量」是 JSON-LD 内容级问题，修模板即可；「页面 Schema 缺失」是按页面分组的类型覆盖情况，用于规划补全哪些 Schema 类型。
+      </p>
+      </div>
+    </details>
+  </div>
+</section><section class="section" id="ai-citability">
+  <div class="sub-head">
+  <div class="sub-head-title-row"><h3>内容质量与引用度</h3><span class="hint-icon" data-hint="内容被 AI 系统直接引用、摘取的能力。确定性逐段评分，权重 25%。涵盖 citability / answerability / 内容质量 / 内容结构。">!</span></div>
+<span class="section-tag status bad">0/100</span></div>
+
+
+    <div class="chart-fallback">
+      <b>0/100 · 未检测到可分析段落</b> — 采集脚本正常运行，但首页正文未找到任何一段 ≥20 词的连贯文字。
+未找到 20 词以上的内容段落。      这通常意味着首页全部由产品标语 / 图片 / 短句碎片组成，AI 引擎无法从中摘取可引用的完整段落。
+      优化方向：为核心产品板块与品牌介绍补 60-100 词的结论性段落（含主推型号、关键规格数字、价格区间、第三方评测结论与外链）。
+    </div>
+</section>    </div>
+
+    <div class="report-group report-group-priority" id="group-action">
+      <header class="group-head">
+        <span class="group-no">03</span>
+        <h2>行动方案</h2>
+        <p>Action Plan · 优先级 · 页面</p>
+        
+      </header>
+<section class="section" id="action-plan">
+  <div class="sub-head">
+    <div class="sub-head-title-row"><h3>行动清单</h3><span class="hint-icon" data-hint="每个问题只列一次。点击行跳转到附录查看完整证据与修复建议。">!</span></div>
+    <div class="action-tabs">
+      <button class="action-tab active" data-view="priority">按优先级</button>
+      <button class="action-tab" data-view="page">按页面</button>
+    </div>
+  </div>
+
+
+
+  <div class="action-view active" data-view="priority">
+      <div class="action-tier">
+        <header class="action-tier-head">
+          <h4 class="action-tier-title">P1 · 高优</h4>
+          <small class="action-tier-hint">1-4 周 · 对 GEO 有明显影响</small>
+        </header>
+
+        <ul class="issue-ref-list">
+          <li class="issue-ref-item">
+              <a href="#appendix-01" class="issue-ref-id">#01</a>
+              <span class="issue-ref-title">首页 SSR 正文极度稀薄，可引用性实测为零</span>
+              <a href="#appendix-01" class="issue-ref-jump">→</a>
+          </li>
+          <li class="issue-ref-item">
+              <a href="#appendix-02" class="issue-ref-id">#02</a>
+              <span class="issue-ref-title">Organization schema 缺 sameAs，品牌实体无法与外部图谱对齐</span>
+              <a href="#appendix-02" class="issue-ref-jump">→</a>
+          </li>
+          <li class="issue-ref-item">
+              <a href="#appendix-03" class="issue-ref-id">#03</a>
+              <span class="issue-ref-title">Article.description 字段在全部采样文章页为空（模板级 bug）</span>
+              <a href="#appendix-03" class="issue-ref-jump">→</a>
+          </li>
+          <li class="issue-ref-item">
+              <a href="#appendix-04" class="issue-ref-id">#04</a>
+              <span class="issue-ref-title">Organization schema 缺 foundingDate / address / contactPoint 等关键事实字段</span>
+              <a href="#appendix-04" class="issue-ref-jump">→</a>
+          </li>
+        </ul>
+      </div>
+      <div class="action-tier">
+        <header class="action-tier-head">
+          <h4 class="action-tier-title">P2 · 优化</h4>
+          <small class="action-tier-hint">1-3 月 · 优化项</small>
+        </header>
+
+        <ul class="issue-ref-list">
+          <li class="issue-ref-item">
+              <a href="#appendix-05" class="issue-ref-id">#05</a>
+              <span class="issue-ref-title">缺 WebSite 与 BreadcrumbList schema，站点级导航信号不完整</span>
+              <a href="#appendix-05" class="issue-ref-jump">→</a>
+          </li>
+          <li class="issue-ref-item">
+              <a href="#appendix-06" class="issue-ref-id">#06</a>
+              <span class="issue-ref-title">缺 FAQ 内容与 FAQPage schema，错过「AI 广告创意怎么用」类问答检索</span>
+              <a href="#appendix-06" class="issue-ref-jump">→</a>
+          </li>
+          <li class="issue-ref-item">
+              <a href="#appendix-07" class="issue-ref-id">#07</a>
+              <span class="issue-ref-title">首页无可识别联系方式，E-E-A-T 信任信号缺失</span>
+              <a href="#appendix-07" class="issue-ref-jump">→</a>
+          </li>
+          <li class="issue-ref-item">
+              <a href="#appendix-08" class="issue-ref-id">#08</a>
+              <span class="issue-ref-title">文章正文质量参差，4/5 篇偏短难支撑深度引用</span>
+              <a href="#appendix-08" class="issue-ref-jump">→</a>
+          </li>
+          <li class="issue-ref-item">
+              <a href="#appendix-09" class="issue-ref-id">#09</a>
+              <span class="issue-ref-title">文章作者无外部身份锚点，Person schema 价值打折</span>
+              <a href="#appendix-09" class="issue-ref-jump">→</a>
+          </li>
+        </ul>
+      </div>
+      <div class="action-tier">
+        <header class="action-tier-head">
+          <h4 class="action-tier-title">P3 · 长期</h4>
+          <small class="action-tier-hint">长期建设 · 持续投入</small>
+        </header>
+
+        <ul class="issue-ref-list">
+          <li class="issue-ref-item">
+              <a href="#appendix-10" class="issue-ref-id">#10</a>
+              <span class="issue-ref-title">缺 5 项安全响应头与 llms-full.txt，技术信任分有优化空间</span>
+              <a href="#appendix-10" class="issue-ref-jump">→</a>
+          </li>
+          <li class="issue-ref-item">
+              <a href="#appendix-11" class="issue-ref-id">#11</a>
+              <span class="issue-ref-title">页面缺 H1 标签</span>
+              <a href="#appendix-11" class="issue-ref-jump">→</a>
+          </li>
+          <li class="issue-ref-item">
+              <details class="issue-ref-details">
+                <summary>
+                  <span class="issue-ref-badge">数周</span>
+                  <span class="issue-ref-title">持续 8–12 周深度内容建设：每周 1 篇 1500+ 词工作流平台对比 /…</span>
+                  <span class="issue-ref-expand-icon">▶</span>
+                </summary>
+                <p class="issue-ref-full">持续 8–12 周深度内容建设：每周 1 篇 1500+ 词工作流平台对比 / 电商视觉成本 / AI 视频质量评测主题文章，积累至 12 篇以上深度内容</p>
+              </details>
+          </li>
+        </ul>
+      </div>
+  </div>
+
+  <div class="action-view" data-view="page">
+        <div class="view-group">
+          <h5 class="view-group-title">首页 Homepage</h5>
+          <ul class="issue-ref-list">
+            <li class="issue-ref-item">
+                <a href="#appendix-01" class="issue-ref-id">#01</a>
+                <span class="issue-ref-title">首页 SSR 正文极度稀薄，可引用性实测为零</span>
+                <a href="#appendix-01" class="issue-ref-jump">→</a>
+            </li>
+            <li class="issue-ref-item">
+                <a href="#appendix-02" class="issue-ref-id">#02</a>
+                <span class="issue-ref-title">Organization schema 缺 sameAs，品牌实体无法与外部图谱对齐</span>
+                <a href="#appendix-02" class="issue-ref-jump">→</a>
+            </li>
+            <li class="issue-ref-item">
+                <a href="#appendix-04" class="issue-ref-id">#04</a>
+                <span class="issue-ref-title">Organization schema 缺 foundingDate / address / contactPoint 等关键事实字段</span>
+                <a href="#appendix-04" class="issue-ref-jump">→</a>
+            </li>
+            <li class="issue-ref-item">
+                <a href="#appendix-05" class="issue-ref-id">#05</a>
+                <span class="issue-ref-title">缺 WebSite 与 BreadcrumbList schema，站点级导航信号不完整</span>
+                <a href="#appendix-05" class="issue-ref-jump">→</a>
+            </li>
+            <li class="issue-ref-item">
+                <a href="#appendix-09" class="issue-ref-id">#09</a>
+                <span class="issue-ref-title">文章作者无外部身份锚点，Person schema 价值打折</span>
+                <a href="#appendix-09" class="issue-ref-jump">→</a>
+            </li>
+            <li class="issue-ref-item">
+                <a href="#appendix-10" class="issue-ref-id">#10</a>
+                <span class="issue-ref-title">缺 5 项安全响应头与 llms-full.txt，技术信任分有优化空间</span>
+                <a href="#appendix-10" class="issue-ref-jump">→</a>
+            </li>
+            <li class="issue-ref-item">
+                <a href="#appendix-11" class="issue-ref-id">#11</a>
+                <span class="issue-ref-title">页面缺 H1 标签</span>
+                <a href="#appendix-11" class="issue-ref-jump">→</a>
+            </li>
+          </ul>
+        </div>
+        <div class="view-group">
+          <h5 class="view-group-title">产品页 Product Pages</h5>
+          <ul class="issue-ref-list">
+            <li class="issue-ref-item">
+                <a href="#appendix-03" class="issue-ref-id">#03</a>
+                <span class="issue-ref-title">Article.description 字段在全部采样文章页为空（模板级 bug）</span>
+                <a href="#appendix-03" class="issue-ref-jump">→</a>
+            </li>
+            <li class="issue-ref-item">
+                <a href="#appendix-08" class="issue-ref-id">#08</a>
+                <span class="issue-ref-title">文章正文质量参差，4/5 篇偏短难支撑深度引用</span>
+                <a href="#appendix-08" class="issue-ref-jump">→</a>
+            </li>
+          </ul>
+        </div>
+        <div class="view-group">
+          <h5 class="view-group-title">博客 Blog</h5>
+          <ul class="issue-ref-list">
+            <li class="issue-ref-item">
+                <a href="#appendix-06" class="issue-ref-id">#06</a>
+                <span class="issue-ref-title">缺 FAQ 内容与 FAQPage schema，错过「AI 广告创意怎么用」类问答检索</span>
+                <a href="#appendix-06" class="issue-ref-jump">→</a>
+            </li>
+          </ul>
+        </div>
+        <div class="view-group">
+          <h5 class="view-group-title">新建页面</h5>
+          <ul class="issue-ref-list">
+            <li class="issue-ref-item">
+                <a href="#appendix-07" class="issue-ref-id">#07</a>
+                <span class="issue-ref-title">首页无可识别联系方式，E-E-A-T 信任信号缺失</span>
+                <a href="#appendix-07" class="issue-ref-jump">→</a>
+            </li>
+          </ul>
+        </div>
+  </div>
+
+  <div class="verdict" style="margin-top:24px">
+    <small>预估影响</small>
+    <p style="margin-top:10px">完成 P0（首页 SSR 内容注入 + Organization sameAs + Article.description 修复 + WebSite/BreadcrumbList）后，首页可引用性从实测 0 分回升至 50–70 分区间，Organization 实体锚定信号基本完整，文章页摘要质量可控；P1（外部平台账号认领 + 作者身份确认 + 内容加深 + FAQ 模块）上线后，schema 维度预计可升至 60–70 分，content 维度进入 70+ 区间；P3（持续内容建设 + Digital PR + Wikidata）为长期工作，预计 3–6 个月后显著。所有 Critical 级 finding 均已在 quick_wins 中覆盖；Wikidata / Wikipedia 词条因需要数月积累，归入 strategic 属正常分级，不计入短期修复目标。</p>
+  </div>
+
+</section>    </div>
+
+    <div class="report-group report-group-appendix" id="group-appendix">
+      <header class="group-head">
+        <span class="group-no">04</span>
+        <h2>附录</h2>
+        <p>Appendix · 技术证据 · 详细数据 · 方法论</p>
+        
+      </header>
+<section class="section" id="appendix">
+  <div class="sub-head">
+  <div class="sub-head-title-row"><h3>问题技术证据</h3><span class="hint-icon" data-hint="全部 Findings 的完整证据、修复建议与代码示例。从行动清单点击行可跳转至此。">!</span></div>
+</div>
+
+
+    <details class="finding-fold sev-High" id="appendix-01">
+      <summary class="finding-fold-summary">
+        <span class="fold-icon">▶</span>
+        <span class="action-card-id">#01</span>
+        <span class="finding-fold-title">首页 SSR 正文极度稀薄，可引用性实测为零</span>
+        <span class="sev status warn">高</span>
+      </summary>
+      <div class="finding-fold-body">
+        <div class="finding-meta">
+          <span>已确认 · 域名层</span>
+          <a href="#action-plan" class="appendix-back">← 返回行动清单</a>
+        </div>
+
+        <div class="finding-col">
+          <h5>业务影响</h5>
+          <p>首页是全站权重最高的入口，但 ChatGPT/Perplexity/Google AIO 抓取后没有任何一段可直接引用的文字来描述「CreativeHit AI 是什么、解决什么问题、给谁用」。AI 引擎只能依赖 title 与 meta description 的 50 字描述，被引用概率与引用准确度都显著降低；同时导致 homepage 在「AI 广告创意工具推荐」类检索中几乎无竞争资格。</p>
+        </div>
+
+        <div class="finding-col">
+          <h5>证据</h5>
+          <p>抓取首页（<a href="https://creativehit.ai/" target="_blank" rel="noopener noreferrer" style="color:var(--accent,#1a73e8);text-decoration:underline;text-underline-offset:2px;word-break:break-all">https://creativehit.ai/</a>）实测：HTTP 200，正文 word_count=31 词，未检测到任何 H1 标签，可引用性扫描未找到任何 ≥20 词的内容段落（citability 平均 0 分，A/B/C/D/F 分段计数全为 0）。整页正文实际只剩导航与按钮文案：「开始创造」「创意模板」「创建工作流」「暂无相关模版」。</p>
+        </div>
+
+        <div class="finding-col finding-fix">
+          <div class="finding-fix-head">
+            <h5>建议动作</h5>
+<span class="finding-owner">负责人 · 内容</span>          </div>
+          <p>在首页 SSR 输出中注入 3–5 段静态文字段落（每段 ≥40 词）：① 一段「What is CreativeHit AI」定位段（产品定义 + 目标用户 + 核心能力）；② 一段「How it works」流程段（3 步流程，含可抽取的步骤实体）；③ 一段「Who it's for」用户画像段（广告营销团队 / 内容创作者 / 电商商家各一句）；④ 一段差异化对比段（与单发工具如 Midjourney、与设计工具如 Canva 的类别差异）。同时补一个语义化 H1（与 title 对齐：「CreativeHit AI - AI 广告视频与图片创意生成工具」）。</p>
+        </div>
+      </div>
+    </details>
+    <details class="finding-fold sev-High" id="appendix-02">
+      <summary class="finding-fold-summary">
+        <span class="fold-icon">▶</span>
+        <span class="action-card-id">#02</span>
+        <span class="finding-fold-title">Organization schema 缺 sameAs，品牌实体无法与外部图谱对齐</span>
+        <span class="sev status warn">高</span>
+      </summary>
+      <div class="finding-fold-body">
+        <div class="finding-meta">
+          <span>已确认 · 域名层</span>
+          <a href="#action-plan" class="appendix-back">← 返回行动清单</a>
+        </div>
+
+        <div class="finding-col">
+          <h5>业务影响</h5>
+          <p>AI 模型无法把 CreativeHit AI 与 LinkedIn 公司页、YouTube 官方频道、Crunchbase 条目、Trustpilot 评价页等外部权威锚点绑定，品牌被识别为普通字符串而非稳定实体。在「最佳 AI 广告创意工具」「AI 视频生成工具对比」类答案中难以进入候选集；同时也无法被知识图谱聚合，实体消歧能力弱。</p>
+        </div>
+
+        <div class="finding-col">
+          <h5>证据</h5>
+          <p>首页 JSON-LD 中的 Organization 仅包含 name=CreativeHit AI 与 url，sameAs 字段缺失（实测 0 条），同时缺 foundingDate、address、contactPoint 三个关键事实字段。通过 Wikipedia 与 Wikidata 官方 API 检索「creativehit」均无词条。</p>
+        </div>
+
+        <div class="finding-col finding-fix">
+          <div class="finding-fix-head">
+            <h5>建议动作</h5>
+<span class="finding-owner">负责人 · 市场</span>          </div>
+          <p>分两步：① 本周在 Organization schema 中补 sameAs 数组（至少 4–8 条真实存在的官方账号 URL，如 LinkedIn 公司页、YouTube 频道、X/Twitter、Crunchbase、Product Hunt、Trustpilot 等）。② 本月同步注册/认领上述平台官方账号并把已核验 URL 写回 sameAs。中期（1–3 月）积累 2 篇以上独立主流媒体报道后推进 Wikidata 词条。</p>
+        </div>
+      </div>
+    </details>
+    <details class="finding-fold sev-High" id="appendix-03">
+      <summary class="finding-fold-summary">
+        <span class="fold-icon">▶</span>
+        <span class="action-card-id">#03</span>
+        <span class="finding-fold-title">Article.description 字段在全部采样文章页为空（模板级 bug）</span>
+        <span class="sev status warn">高</span>
+      </summary>
+      <div class="finding-fold-body">
+        <div class="finding-meta">
+          <span>已确认 · 模板层</span>
+          <a href="#action-plan" class="appendix-back">← 返回行动清单</a>
+        </div>
+
+        <div class="finding-col">
+          <h5>业务影响</h5>
+          <p>Google AIO 与 Perplexity 引用文章时优先读 Article.description；为空则回退到正文随机抽取，摘要质量不可控，且容易抽到「Back to app →」「More from the blog」等模板噪音文本。同时该字段缺失会让 Article schema 在 Rich Results Test 中触发警告。</p>
+        </div>
+
+        <div class="finding-col">
+          <h5>证据</h5>
+          <p>5 个采样文章页（/blog/ai-ad-creative-2026、/blog/ai-creative-workflow-platforms、/blog/workflow-automation-guide、/blog/ecommerce-product-visuals、/blog/whats-new-september）的 Article schema 中 description 字段全部为空字符串；对应 meta name="description" 仅重复标题（如「The State of AI Ad Creative in 2026 — CreativeHit AI Blog」），未提供正文摘要。</p>
+        </div>
+
+        <div class="finding-col finding-fix">
+          <div class="finding-fix-head">
+            <h5>建议动作</h5>
+<span class="finding-owner">负责人 · 内容</span>          </div>
+          <p>改文章页模板（一处修复全部 5 个页面）：在 Article JSON-LD 输出时把 description 字段填为正文首段前 150–160 字符的纯文本摘要（去除 emoji 与 markdown）；同步把 meta name="description" 改为同一段摘要而非重复标题。</p>
+        </div>
+      </div>
+    </details>
+    <details class="finding-fold sev-High" id="appendix-04">
+      <summary class="finding-fold-summary">
+        <span class="fold-icon">▶</span>
+        <span class="action-card-id">#04</span>
+        <span class="finding-fold-title">Organization schema 缺 foundingDate / address / contactPoint 等关键事实字段</span>
+        <span class="sev status warn">高</span>
+      </summary>
+      <div class="finding-fold-body">
+        <div class="finding-meta">
+          <span>已确认 · 模板层</span>
+          <a href="#action-plan" class="appendix-back">← 返回行动清单</a>
+        </div>
+
+        <div class="finding-col">
+          <h5>业务影响</h5>
+          <p>AI 无法从结构化数据中抽取品牌创立时间、总部地点、联系方式等基础事实，知识图谱聚合度低；同时对 B2B/SaaS 类站点，contactPoint 缺失会被判定为「匿名运营实体」，E-E-A-T 信任分受损。</p>
+        </div>
+
+        <div class="finding-col">
+          <h5>证据</h5>
+          <p>首页 Organization JSON-LD 实测仅含 name 与 url 两个字段，缺 foundingDate、address (PostalAddress)、contactPoint (ContactPoint)。首页正文与页脚仅显示公司注册名「偉廸科技發展有限公司 GREAT TALENT TECHNOLOGY DEVELOPMENT LIMITED」，未提供结构化地址与联系方式。</p>
+        </div>
+
+        <div class="finding-col finding-fix">
+          <div class="finding-fix-head">
+            <h5>建议动作</h5>
+<span class="finding-owner">负责人 · 开发</span>          </div>
+          <p>在 Organization schema 中补：foundingDate（格式 YYYY-MM-DD 或 YYYY）、address（@type: PostalAddress，含 addressCountry / addressRegion / addressLocality）、contactPoint（@type: ContactPoint，contactType: customer support，email 或 url 至少一项）。这些字段需与页脚 / 联系页可见信息一致，不得编造。</p>
+        </div>
+      </div>
+    </details>
+    <details class="finding-fold sev-Medium" id="appendix-05">
+      <summary class="finding-fold-summary">
+        <span class="fold-icon">▶</span>
+        <span class="action-card-id">#05</span>
+        <span class="finding-fold-title">缺 WebSite 与 BreadcrumbList schema，站点级导航信号不完整</span>
+        <span class="sev status warn">中</span>
+      </summary>
+      <div class="finding-fold-body">
+        <div class="finding-meta">
+          <span>已确认 · 模板层</span>
+          <a href="#action-plan" class="appendix-back">← 返回行动清单</a>
+        </div>
+
+        <div class="finding-col">
+          <h5>业务影响</h5>
+          <p>WebSite schema 缺失让 AI 无法识别「这是一个有名称、有搜索能力、有 publisher 的稳定站点」；BreadcrumbList 缺失让 AI 无法理解「文章页 ⊂ 博客 ⊂ 全站」的层级，影响站点结构的语义化传递。两者叠加使 sitemap 中 22 条 URL 之间的关系对 AI 不透明。</p>
+        </div>
+
+        <div class="finding-col">
+          <h5>证据</h5>
+          <p>schema 清单实测 WebSite 与 BreadcrumbList 均标记为 Missing（采样范围：首页 + 5 篇文章页共 6 页）。文章页正文里存在「Back to all articles」「More from the blog」等导航锚点，但未通过 BreadcrumbList 结构化。</p>
+        </div>
+
+        <div class="finding-col finding-fix">
+          <div class="finding-fix-head">
+            <h5>建议动作</h5>
+<span class="finding-owner">负责人 · 内容</span>          </div>
+          <p>① 在首页注入 WebSite JSON-LD：name=CreativeHit AI、url=<a href="https://creativehit.ai/" target="_blank" rel="noopener noreferrer" style="color:var(--accent,#1a73e8);text-decoration:underline;text-underline-offset:2px;word-break:break-all">https://creativehit.ai/</a>、publisher 引用已有 Organization @id。② 在文章页模板注入 BreadcrumbList：Home → Blog → {article_title}，与页面实际导航路径一致。</p>
+          <details class="code-fold">
+            <summary>
+              <span class="fold-icon">▶</span>
+              <span class="fold-label">示例代码</span>
+            </summary>
+            <div class="code-example"><code>&lt;script type=&#34;application/ld+json&#34;&gt;
+{
+  &#34;@context&#34;: &#34;https://schema.org&#34;,
+  &#34;@type&#34;: &#34;Organization&#34;,
+  &#34;name&#34;: &#34;AI 广告视频与图片创意生成工具&#34;,
+  &#34;url&#34;: &#34;https://creativehit.ai&#34;,
+  &#34;logo&#34;: &#34;https://creativehit.ai/logo.png&#34;,
+  &#34;sameAs&#34;: [
+    &#34;https://www.linkedin.com/company/yourbrand&#34;,
+    &#34;https://twitter.com/yourbrand&#34;,
+    &#34;https://www.youtube.com/yourbrand&#34;
+  ]
+}
+&lt;/script&gt;</code></div>
+          </details>
+        </div>
+      </div>
+    </details>
+    <details class="finding-fold sev-Medium" id="appendix-06">
+      <summary class="finding-fold-summary">
+        <span class="fold-icon">▶</span>
+        <span class="action-card-id">#06</span>
+        <span class="finding-fold-title">缺 FAQ 内容与 FAQPage schema，错过「AI 广告创意怎么用」类问答检索</span>
+        <span class="sev status warn">中</span>
+      </summary>
+      <div class="finding-fold-body">
+        <div class="finding-meta">
+          <span>已确认 · 域名层</span>
+          <a href="#action-plan" class="appendix-back">← 返回行动清单</a>
+        </div>
+
+        <div class="finding-col">
+          <h5>业务影响</h5>
+          <p>Perplexity、ChatGPT 搜索、Google AIO 对「How / What / Why」类问题的回答强依赖 FAQPage 结构化数据。当前站点对「CreativeHit AI 能做什么」「支持哪些平台」「定价如何」「是否支持团队协同」等高频问题没有可被直接引用的答案载体。</p>
+        </div>
+
+        <div class="finding-col">
+          <h5>证据</h5>
+          <p>全站功能页扫描：support / faq / contact / about / warranty 五类功能页均标记为 missing（既不在内部链接也不在 sitemap 中）。schema 清单显示 FAQPage 为 Missing。采样文章正文以叙述/对比为主，无显式 Q&amp;A 模块。</p>
+        </div>
+
+        <div class="finding-col finding-fix">
+          <div class="finding-fix-head">
+            <h5>建议动作</h5>
+<span class="finding-owner">负责人 · 内容</span>          </div>
+          <p>两阶段：① 本月在 /insights 或独立 /faq 页建立 FAQ 模块，覆盖 6–10 个高频问题（产品定义 / 支持平台 / 定价 / 团队协作 / 模板复用 / 输出格式 / 版权归属），并以 FAQPage JSON-LD 标注；② 下月把 FAQ 模块拆解嵌入到对应文章页（例如在工作流平台对比文末尾嵌入「如何判断我的团队是否需要工作流平台」等 3 个 Q&amp;A）。</p>
+        </div>
+      </div>
+    </details>
+    <details class="finding-fold sev-Medium" id="appendix-07">
+      <summary class="finding-fold-summary">
+        <span class="fold-icon">▶</span>
+        <span class="action-card-id">#07</span>
+        <span class="finding-fold-title">首页无可识别联系方式，E-E-A-T 信任信号缺失</span>
+        <span class="sev status warn">中</span>
+      </summary>
+      <div class="finding-fold-body">
+        <div class="finding-meta">
+          <span>已确认 · 域名层</span>
+          <a href="#action-plan" class="appendix-back">← 返回行动清单</a>
+        </div>
+
+        <div class="finding-col">
+          <h5>业务影响</h5>
+          <p>AI 引擎与搜索引擎均把「联系方式可核验」作为 E-E-A-T 信任信号；完全缺失时会被判定为「匿名运营实体」，降低被引用与推荐权重，尤其对 B2B/SaaS 类站点影响显著。</p>
+        </div>
+
+        <div class="finding-col">
+          <h5>证据</h5>
+          <p>首页正文与页脚仅显示公司注册名「偉廸科技發展有限公司 GREAT TALENT TECHNOLOGY DEVELOPMENT LIMITED」与「服务政策 / 隐私条款 / 帮助文档 / 联系我们」四个链接，正文未出现任何邮箱 / 电话 / 表单；Organization schema 中 contactPoint 字段缺失；全站功能页扫描 contact 标记为 missing。</p>
+        </div>
+
+        <div class="finding-col finding-fix">
+          <div class="finding-fix-head">
+            <h5>建议动作</h5>
+<span class="finding-owner">负责人 · 开发</span>          </div>
+          <p>① 在页脚或「联系我们」页披露至少一种可核验联系方式（支持邮箱 support@creativehit.ai 或工单入口）；② 同步在 Organization schema 的 contactPoint 数组中结构化该联系方式（@type: ContactPoint、contactType: customer support、email / url）。</p>
+        </div>
+      </div>
+    </details>
+    <details class="finding-fold sev-Medium" id="appendix-08">
+      <summary class="finding-fold-summary">
+        <span class="fold-icon">▶</span>
+        <span class="action-card-id">#08</span>
+        <span class="finding-fold-title">文章正文质量参差，4/5 篇偏短难支撑深度引用</span>
+        <span class="sev status warn">中</span>
+      </summary>
+      <div class="finding-fold-body">
+        <div class="finding-meta">
+          <span>已确认 · 编辑层</span>
+          <a href="#action-plan" class="appendix-back">← 返回行动清单</a>
+        </div>
+
+        <div class="finding-col">
+          <h5>业务影响</h5>
+          <p>AI 引用偏好「有统计密度、有独家观点、有可复述定义」的段落；≤250 词的短文难以通过「20 词以上可引用段落 + 有信息熵」的双重过滤，被引用概率显著低于 1500+ 词的深度文章。当前站点内容供给无法支撑「AI 广告创意工作流」主题的持续权威。</p>
+        </div>
+
+        <div class="finding-col">
+          <h5>证据</h5>
+          <p>5 篇采样文章正文词数：ai-ad-creative-2026=252 词、ai-creative-workflow-platforms=1888 词、workflow-automation-guide=248 词、ecommerce-product-visuals=223 词、whats-new-september=224 词。其中 4 篇均 ≤252 词，仅为产品动态或概念性短文，缺乏数据、案例与可抽取的独立观点。</p>
+        </div>
+
+        <div class="finding-col finding-fix">
+          <div class="finding-fix-head">
+            <h5>建议动作</h5>
+<span class="finding-owner">负责人 · 内容</span>          </div>
+          <p>本月起执行内容加深计划：① 对 4 篇短文每篇扩写到 800–1200 词，注入 1 个统计数据（自有客户数据或公开行业数据并附来源链接）、1 个可复述定义、1 个案例段；② 后续每周发布 1 篇 1500+ 词的深度文章，聚焦工作流平台对比、电商视觉成本、AI 视频生成质量评测等长尾主题。</p>
+        </div>
+      </div>
+    </details>
+    <details class="finding-fold sev-Medium" id="appendix-09">
+      <summary class="finding-fold-summary">
+        <span class="fold-icon">▶</span>
+        <span class="action-card-id">#09</span>
+        <span class="finding-fold-title">文章作者无外部身份锚点，Person schema 价值打折</span>
+        <span class="sev status warn">中</span>
+      </summary>
+      <div class="finding-fold-body">
+        <div class="finding-meta">
+          <span>较可能 · 模板层</span>
+          <a href="#action-plan" class="appendix-back">← 返回行动清单</a>
+        </div>
+
+        <div class="finding-col">
+          <h5>业务影响</h5>
+          <p>AI 模型无法把作者与 LinkedIn 个人页、Twitter、个人博客等外部身份绑定，作者署名沦为字符串而非可信实体；E-E-A-T 中「Expertise / Experience」两维信号被削弱，文章被引用时难以传递「这是领域专家」的信号。</p>
+        </div>
+
+        <div class="finding-col">
+          <h5>证据</h5>
+          <p>采样文章署名包含 Maya Chen、Daniel Park、Sofia Ramirez、CreativeHit Team 等，但 Person schema 仅包含 name 字段，无 url / jobTitle / sameAs；站内无独立作者介绍页；首页与文章页正文未提供作者简介或外链。</p>
+        </div>
+
+        <div class="finding-col finding-fix">
+          <div class="finding-fix-head">
+            <h5>建议动作</h5>
+<span class="finding-owner">负责人 · 内容</span>          </div>
+          <p>① 若 3 位署名作者为企业内部编辑：把 Article.author 改为 @type: Organization（CreativeHit AI Editorial Team），避免被 AI 反作弊判定为虚假个人身份。② 若作者为真实员工：为每位建立 /authors/{slug} 独立介绍页，含职位、简介、LinkedIn URL，并在 Person schema 中补 url、jobTitle、sameAs。</p>
+        </div>
+      </div>
+    </details>
+    <details class="finding-fold sev-Low" id="appendix-10">
+      <summary class="finding-fold-summary">
+        <span class="fold-icon">▶</span>
+        <span class="action-card-id">#10</span>
+        <span class="finding-fold-title">缺 5 项安全响应头与 llms-full.txt，技术信任分有优化空间</span>
+        <span class="sev status good">低</span>
+      </summary>
+      <div class="finding-fold-body">
+        <div class="finding-meta">
+          <span>已确认 · 域名层</span>
+          <a href="#action-plan" class="appendix-back">← 返回行动清单</a>
+        </div>
+
+        <div class="finding-col">
+          <h5>业务影响</h5>
+          <p>安全响应头属通用 Web 协议，AI 爬虫不直接读取，但会被部分反作弊与信任评分模型作为参考信号；llms-full.txt 缺失让 AI 无法在单次请求中获取全站内容的简明索引。两者均为优化项而非阻塞问题。</p>
+        </div>
+
+        <div class="finding-col">
+          <h5>证据</h5>
+          <p>首页响应头实测仅含 HSTS（max-age=31536000; includeSubDomains），缺 CSP、X-Frame-Options、X-Content-Type-Options、Referrer-Policy、Permissions-Policy 5 项；llms.txt 已部署但 llms-full.txt 未部署。</p>
+        </div>
+
+        <div class="finding-col finding-fix">
+          <div class="finding-fix-head">
+            <h5>建议动作</h5>
+<span class="finding-owner">负责人 · 内容</span>          </div>
+          <p>① 在 CDN / 边缘函数中补 5 项安全头：CSP 至少 default-src 'self'、X-Frame-Options: SAMEORIGIN、X-Content-Type-Options: nosniff、Referrer-Policy: strict-origin-when-cross-origin、Permissions-Policy: camera=(), microphone=(), geolocation=()。② 在 /llms-full.txt 部署站点全量内容索引（首页定位、22 条 sitemap URL 的一句话说明、核心 FAQ 摘要）。</p>
+          <details class="code-fold">
+            <summary>
+              <span class="fold-icon">▶</span>
+              <span class="fold-label">示例代码</span>
+            </summary>
+            <div class="code-example"><code># Nginx 配置示例
+add_header Referrer-Policy &#34;strict-origin-when-cross-origin&#34; always;
+add_header Permissions-Policy &#34;camera=(), microphone=(), geolocation=()&#34; always;</code></div>
+          </details>
+        </div>
+      </div>
+    </details>
+    <details class="finding-fold sev-Low" id="appendix-11">
+      <summary class="finding-fold-summary">
+        <span class="fold-icon">▶</span>
+        <span class="action-card-id">#11</span>
+        <span class="finding-fold-title">页面缺 H1 标签</span>
+        <span class="sev status good">低</span>
+      </summary>
+      <div class="finding-fold-body">
+        <div class="finding-meta">
+          <span>已确认 · 模板层</span>
+          <a href="#action-plan" class="appendix-back">← 返回行动清单</a>
+        </div>
+
+        <div class="finding-col">
+          <h5>业务影响</h5>
+          <p>H1 是 AI 与搜索引擎识别页面主题的最高权重信号；缺失时只能靠 title/H2 间接推断，页面主题识别模糊。</p>
+        </div>
+
+        <div class="finding-col">
+          <h5>证据</h5>
+          <p>经页面扫描确认：页面缺 H1 标签。影响范围涉及 1 个页面。</p>
+        </div>
+
+        <div class="finding-col finding-fix">
+          <div class="finding-fix-head">
+            <h5>建议动作</h5>
+<span class="finding-owner">负责人 · 开发</span>          </div>
+          <p>为该页模板补一个语义化 H1（与 title 保持一致的栏目/页面名）。</p>
+        </div>
+      </div>
+    </details>
+</section>    </div>
+  </main>
+</div>
+
+<footer><strong>GEO 官网优化报告</strong> · creativehit.ai · 2026-11-18</footer>
+
+<div id="hint-tip" role="tooltip"></div>
+<script>
+(function () {
+  var tip = document.getElementById("hint-tip");
+  if (!tip) return;
+  function show(link) {
+    var text = link.getAttribute("data-hint") || "";
+    if (!text) return;
+    tip.textContent = text;
+    tip.style.display = "block";
+    tip.style.left = "0px"; tip.style.top = "0px";  // 先渲染再测量
+    var r = link.getBoundingClientRect();
+    var tw = tip.offsetWidth, th = tip.offsetHeight;
+    var x = Math.min(Math.max(8, r.left), window.innerWidth - tw - 8);
+    var y = r.top - th - 8;
+    if (y < 8) y = r.bottom + 8;  // 上方放不下时改到下方
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
+  }
+  function hide() { tip.style.display = "none"; }
+  document.addEventListener("mouseover", function (e) {
+    var link = e.target && e.target.closest && e.target.closest(".hint-link, .hint-icon");
+    if (link) show(link);
+  });
+  document.addEventListener("mouseout", function (e) {
+    var link = e.target && e.target.closest && e.target.closest(".hint-link, .hint-icon");
+    if (link) hide();
+  });
+  document.addEventListener("scroll", hide, true);
+})();
+</script>
+
+<script>
+/* 行动方案 · tab 切换（优先级 / 页面 / 时间） */
+(function () {
+  document.addEventListener("click", function (e) {
+    var tab = e.target && e.target.closest && e.target.closest(".action-tab");
+    if (!tab) return;
+    var viewName = tab.getAttribute("data-view");
+    var section = tab.closest(".section");
+    if (!section) return;
+    section.querySelectorAll(".action-tab").forEach(function (t) {
+      t.classList.toggle("active", t === tab);
+      t.setAttribute("aria-selected", t === tab ? "true" : "false");
+    });
+    section.querySelectorAll(".action-view").forEach(function (v) {
+      v.classList.toggle("active", v.getAttribute("data-view") === viewName);
+    });
+  });
+})();
+</script>
+
+<script>
+/* 附录跳转：平滑滚动 + 自动展开 details + 闪烁高亮 */
+(function () {
+  function flashTarget(el) {
+    // 若是 details 则自动展开
+    if (el.tagName === "DETAILS" && !el.open) el.open = true;
+    el.classList.remove("flash");
+    void el.offsetWidth;  // 强制 reflow 重置动画
+    el.classList.add("flash");
+  }
+  // 拦截所有指向 #appendix-XX 的锚点点击
+  document.addEventListener("click", function (e) {
+    var a = e.target && e.target.closest && e.target.closest('a[href^="#appendix-"]');
+    if (!a) return;
+    e.preventDefault();
+    var id = a.getAttribute("href").slice(1);
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    history.replaceState(null, "", "#" + id);
+    setTimeout(function () { flashTarget(el); }, 300);
+  });
+  // 页面加载时若 hash 指向附录条目，自动展开并闪烁
+  if (location.hash.startsWith("#appendix-")) {
+    var el = document.getElementById(location.hash.slice(1));
+    if (el) setTimeout(function () { flashTarget(el); el.scrollIntoView({ block: "start" }); }, 100);
+  }
+})();
+</script>
+
+<script>window.__CHART_DATA__ = {"colors": {"orange": "#c9552c", "green": "#52765e", "amber": "#a96a34", "red": "#a75b4a", "ink": "#27231f", "muted": "#7d7466", "line": "#ded6c8", "warm": "#f4efe5", "warm2": "#efe9dc", "ink2": "#4a443b"}, "gauge": {"score": 46, "label": "偏弱"}, "radar": {"labels": ["内容引用度", "内容质量", "技术基础", "品牌识别与 Schema", "爬虫可达性"], "values": [8, 55, 68, 38, 100], "notes": ["首页 SSR 正文仅 31 词、无 H1、无任何 ≥20 词的可引用段落，citability 实测均分 0；文章页正文质量尚可（抽样最长 1888 词、含 TL;DR），但首页作为最高权重入口基本无法被 AI 引用。", "文章正文质量中上：采样 5 篇中 1 篇 1888 词、含明确 TL;DR 与结构化对比框架；4 篇偏短（223–252 词）仅为产品动态与概念短文。有 Person 作者署名（Maya Chen、Daniel Park、Sofia Ramirez）但无作者简介页与外部身份锚点；首页正文稀薄，整体 E-E-A-T 信号被拉低。", "HTTPS 已启用、HSTS 在位、sitemap 可达且含 22 条 URL、最新 lastmod=2026-10-09、llms.txt 已部署。扣分项：首页正文为 SPA 渲染 SSR 内容稀薄（仅 31 词）、缺 CSP/X-Frame-Options/X-Content-Type-Options/Referrer-Policy/Permissions-Policy 等 5 项安全响应头。", "关键类型覆盖 5/11：Organization / SoftwareApplication / Article / Person / WebPage 已 Present，无 Broken。但 Organization 缺 sameAs（实测 0 条）与 foundingDate/address/contactPoint；Wikipedia/Wikidata API 均无词条；缺 WebSite、BreadcrumbList、FAQPage；Article.description 字段在 5 个采样文章页全部为空（模板级 bug）。", "12 个 AI 爬虫 UA（GPTBot/OAI-SearchBot/ChatGPT-User/ClaudeBot/Claude-SearchBot/Claude-User/PerplexityBot/Perplexity-User/GoogleBot/BingBot/CCBot/Amazonbot）重放全部返回 200、内容相似度 1.0，未检出 WAF 拦截；四类爬虫（training/search-index/live-retrieval/traditional-search）分类得分全部 100。"]}, "waterfall": {"steps": [{"name": "内容引用度 ×0.31", "value": 2.5, "start": 0.0, "end": 2.5, "score": 8, "color": "#a75b4a"}, {"name": "内容质量 ×0.25", "value": 13.8, "start": 2.5, "end": 16.3, "score": 55, "color": "#a96a34"}, {"name": "技术基础 ×0.19", "value": 12.8, "start": 16.3, "end": 29.1, "score": 68, "color": "#7a947f"}, {"name": "品牌识别与 Schema ×0.12", "value": 4.8, "start": 29.1, "end": 33.9, "score": 38, "color": "#a75b4a"}, {"name": "爬虫可达性 ×0.12", "value": 12.5, "start": 33.9, "end": 46.4, "score": 100, "color": "#52765e"}], "total": 46}, "bot_heatmap": {"bots": ["ChatGPT-User\n(实时检索)", "Claude-User\n(实时检索)", "Perplexity-User\n(实时检索)", "Amazonbot\n(搜索索引)", "Claude-SearchBot\n(搜索索引)", "OAI-SearchBot\n(搜索索引)", "PerplexityBot\n(搜索索引)", "BingBot\n(传统搜索)", "GoogleBot\n(传统搜索)", "CCBot\n(训练)", "ClaudeBot\n(训练)", "GPTBot\n(训练)"], "rows": [{"x": 0, "y": 0, "color": "#52765e", "bot": "ChatGPT-User", "status": 200, "similarity": 1.0, "reason": null, "state": "allowed"}, {"x": 1, "y": 0, "color": "#52765e", "bot": "Claude-User", "status": 200, "similarity": 1.0, "reason": null, "state": "allowed"}, {"x": 2, "y": 0, "color": "#52765e", "bot": "Perplexity-User", "status": 200, "similarity": 1.0, "reason": null, "state": "allowed"}, {"x": 3, "y": 0, "color": "#52765e", "bot": "Amazonbot", "status": 200, "similarity": 1.0, "reason": null, "state": "allowed"}, {"x": 4, "y": 0, "color": "#52765e", "bot": "Claude-SearchBot", "status": 200, "similarity": 1.0, "reason": null, "state": "allowed"}, {"x": 5, "y": 0, "color": "#52765e", "bot": "OAI-SearchBot", "status": 200, "similarity": 1.0, "reason": null, "state": "allowed"}, {"x": 6, "y": 0, "color": "#52765e", "bot": "PerplexityBot", "status": 200, "similarity": 1.0, "reason": null, "state": "allowed"}, {"x": 7, "y": 0, "color": "#52765e", "bot": "BingBot", "status": 200, "similarity": 1.0, "reason": null, "state": "allowed"}, {"x": 8, "y": 0, "color": "#52765e", "bot": "GoogleBot", "status": 200, "similarity": 1.0, "reason": null, "state": "allowed"}, {"x": 9, "y": 0, "color": "#52765e", "bot": "CCBot", "status": 200, "similarity": 1.0, "reason": null, "state": "allowed"}, {"x": 10, "y": 0, "color": "#52765e", "bot": "ClaudeBot", "status": 200, "similarity": 1.0, "reason": null, "state": "allowed"}, {"x": 11, "y": 0, "color": "#52765e", "bot": "GPTBot", "status": 200, "similarity": 1.0, "reason": null, "state": "allowed"}]}, "schema_status": {"present": 5, "missing": 4, "not_sampled": 2}, "freshness": {"age_days": 3, "tier": "新鲜", "best_date": "2026-10-09", "source": "structured_data", "fresh_boundary": 90, "stale_boundary": 365}, "security_matrix": {"headers": [{"header": "HSTS", "present": true, "points": 10, "value": "max-age=31536000; includeSubDomains"}, {"header": "CSP", "present": false, "points": 10, "value": ""}, {"header": "X-Frame-Options", "present": false, "points": 5, "value": ""}, {"header": "X-Content-Type-Options", "present": false, "points": 5, "value": ""}, {"header": "Referrer-Policy", "present": false, "points": 5, "value": ""}, {"header": "Permissions-Policy", "present": false, "points": 3, "value": ""}], "https": true, "score": 59}};</script>
+<script>
+(function () {
+  if (typeof echarts === "undefined") return;
+  var D = window.__CHART_DATA__ || {};
+  var C = D.colors || {};
+  var charts = [];
+  function init(id, option) {
+    var el = document.getElementById(id);
+    if (!el || !option) return;
+    var ch = echarts.init(el, null, { renderer: "svg" });
+    ch.setOption(option); charts.push(ch);
+  }
+  var AXL = { color: C.muted, fontSize: 11 };
+  var SL = { lineStyle: { color: C.warm2 } };
+  var TT = { trigger: "item", backgroundColor: "#fffdf8", borderColor: C.line, textStyle: { color: C.ink, fontSize: 12 } };
+  var TTA = { trigger: "axis", backgroundColor: "#fffdf8", borderColor: C.line, textStyle: { color: C.ink, fontSize: 12 } };
+
+  // 仪表盘（嵌入综合评分深棕面板，配色调亮；隐藏 detail 数字避免与上方大数字重复）
+  if (D.gauge) init("chart-gauge", { series: [{
+    type: "gauge", startAngle: 210, endAngle: -30, min: 0, max: 100, radius: "98%", center: ["50%", "55%"],
+    axisLine: { lineStyle: { width: 12, color: [[0.4, "#e2603f"], [0.6, "#e2a23f"], [0.75, "#8fae93"], [1, "#6fae7d"] ] } },
+    pointer: { length: "55%", width: 4, itemStyle: { color: "#e4a080" } },
+    anchor: { show: true, size: 8, itemStyle: { color: "#e4a080" } },
+    axisTick: { distance: -12, length: 4, lineStyle: { color: "#2a211d", width: 1 } },
+    splitLine: { distance: -12, length: 12, lineStyle: { color: "#2a211d", width: 2 } },
+    axisLabel: { distance: 18, color: "#a9a096", fontSize: 9 },
+    title: { show: false },
+    detail: { show: false },
+    data: [{ value: D.gauge.score, name: D.gauge.label }]
+  }]});
+
+  // 雷达
+  if (D.radar) init("chart-radar", {
+    tooltip: {
+      trigger: "item",
+      backgroundColor: "#fffdf8", borderColor: C.line, textStyle: { color: C.ink, fontSize: 12 },
+      confine: true,
+      formatter: function () {
+        // hover 任意位置都显示所有维度分数（不含 note，note 由下方折叠面板承担）
+        var dims = D.radar.labels || [], vals = D.radar.values || [];
+        var html = "";
+        for (var i = 0; i < dims.length; i++) {
+          html += "<div style='margin:2px 0'><b>" + dims[i] + "</b>  " + vals[i] + " / 100</div>";
+        }
+        return html;
+      }
+    },
+    radar: { indicator: D.radar.labels.map(function (n) { return { name: n, max: 100 }; }),
+      radius: "78%", shape: "polygon", axisName: { color: C.ink2, fontSize: 11 },
+      splitArea: { areaStyle: { color: ["#faf7f0", "#f4efe5"] } },
+      axisLine: { lineStyle: { color: C.line } }, splitLine: { lineStyle: { color: C.warm2 } } },
+    series: [{ type: "radar", data: [{ value: D.radar.values, name: "得分",
+      areaStyle: { color: "rgba(201,85,44,0.18)" }, lineStyle: { color: C.orange, width: 2 },
+      itemStyle: { color: C.orange }, symbolSize: 6 }] }]
+  });
+
+  // 五维度均值
+  if (D.dimension_bars) { var db = D.dimension_bars; init("chart-dimension-bars", {
+    tooltip: { trigger: "axis", backgroundColor: "#fffdf8", borderColor: C.line, textStyle: { color: C.ink, fontSize: 12 },
+      confine: true, extraCssText: "max-width:340px;white-space:normal;line-height:1.6;",
+      formatter: function (ps) {
+        var i = ps[0].dataIndex;
+        var h = "<div style='font-weight:600;margin-bottom:4px'>" + db.labels[i] +
+                " <span style='color:#7d7466;font-weight:400'>均值 " + db.values[i] + " / 满分 " + db.maxima[i] + "</span></div>";
+        if (db.descs && db.descs[i])   h += "<div style='margin-bottom:4px'><b>含义</b>：" + db.descs[i] + "</div>";
+        if (db.examples && db.examples[i]) h += "<div style='margin-bottom:4px'><b>满分示例</b>：" + db.examples[i] + "</div>";
+        if (db.hints && db.hints[i])   h += "<div style='color:#c9552c'><b>改写方向</b>：" + db.hints[i] + "</div>";
+        return h;
+      } },
+    grid: { left: 10, right: 60, top: 18, bottom: 8, containLabel: true },
+    xAxis: { type: "category", data: db.labels, axisLabel: { color: C.muted, fontSize: 11, interval: 0 }, axisLine: { lineStyle: { color: C.line } }, axisTick: { alignWithLabel: true } },
+    yAxis: { type: "value", axisLabel: AXL, splitLine: SL },
+    series: [
+      { type: "bar", data: db.maxima, barWidth: "52%", barGap: "-100%", silent: true, itemStyle: { color: C.warm2, borderRadius: [3, 3, 0, 0] }, tooltip: { show: false }, z: 1 },
+      { type: "bar", data: db.values, barWidth: "52%", z: 2, itemStyle: { color: C.orange, borderRadius: [3, 3, 0, 0] }, label: { show: true, position: "top", fontSize: 11, color: C.ink2 } }
+    ] }); }
+
+  var rt;
+  window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { charts.forEach(function (c) { c.resize(); }); }, 120); });
+  window.addEventListener("beforeprint", function () { charts.forEach(function (c) { c.resize(); }); });
+})();
+</script>
+</body>
+</html>

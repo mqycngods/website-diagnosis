@@ -69,6 +69,22 @@ _CONSISTENCY_BLOCKER_KINDS = {"author_mismatch_template"}
 # ⑤类最小样本量：有效页面数低于此值不做「全站无日期」推断（原则 3，防样本偏差）
 _FRESHNESS_MIN_SAMPLES = 3
 
+# 允许以 Critical 进入 P0 清单的 issue kind 白名单——与 compute_p0_blockers
+# 中「确定性（deterministic）」的那几条一一对应，封闭枚举（原则 1）。
+# cap_severity_p0 用它把上游写成 Critical 的非阻塞项降为 High。
+#
+# 只收确定性项：推断类（thin_content / no_heading_structure /
+# no_machine_readable_date / challenge_page）在 p0_blocking_note 里只算
+# 「疑似阻塞」，横幅会写「可进行 GEO 优化」——若它们仍以 P0 出现在清单里，
+# 报告就会再次自相矛盾。推断项统一降为 High，等复测确认。
+#
+# 注意：sameAs 为空 / 主页缺 Organization / 全站无 Organization 均不在其中
+# （entity_graph 已按评分卡口径定 High）。
+_P0_WHITELIST = {
+    "fetch_failed", "no_ssr", "retrieval_bots_blocked",
+    "homepage_zero_jsonld", "author_mismatch_template",
+}
+
 # 每条规则的排除边界（原则 5：评审时逐条核对「什么时候不该触发」）。
 # key 为 blocker key，value 为该规则明确排除、不升 P0 的情形。
 RULE_EXCLUSIONS = {
@@ -274,3 +290,26 @@ def p0_blocking_note(blockers: list) -> str:
     more = f" 等 {len(suspected)} 项" if len(suspected) > 3 else ""
     return (f"可进行 GEO 优化。另有 {len(suspected)} 项疑似阻塞待确认："
             f"{s_titles}{more}——建议复测后再定优先级。")
+
+
+def cap_severity_p0(severity: str, kind: str) -> str:
+    """把 P0 白名单之外的问题从 Critical 降到 High（评分卡口径的唯一出口）。
+
+    背景：agent 的 scores.json 与分析器都可以写 Critical，而报告横幅、
+    P0 清单、执行计划前置判定三处口径必须一致——`compute_p0_blockers`
+    的规则是唯一裁判。凡是它明确排除、不升 P0 的情形（RULE_EXCLUSIONS），
+    即使上游写成 Critical，也不能以「P0 立即修复」出现在行动清单里，
+    否则同一份报告会出现「可进行 GEO 优化」横幅 + 红色 P0 清单（
+    creativehit.ai 报告即此）。
+
+    白名单与 compute_p0_blockers 的确定性判定一一对应：
+      抓取失败 / 无 SSR / 检索类爬虫被拦 / 首页零 JSON-LD /
+      白名单 consistency Critical（author_mismatch_template）
+    推断类（正文极薄、无标题层级、全站无日期、挑战页）不算 P0，一并降级。
+    """
+    if severity != "Critical":
+        return severity
+    if kind in _P0_WHITELIST:
+        return severity
+    return "High"
+

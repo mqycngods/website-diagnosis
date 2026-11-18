@@ -39,7 +39,7 @@ def analyze(signals: dict) -> list:
             issues.append(make_issue(
                 category="entity_graph",
                 kind="homepage_missing_organization",
-                severity="Critical",
+                severity="High",
                 title="主页缺 Organization schema（其他页面有）",
                 evidence={
                     "main_url": {"value": main_url, "location": "homepage"},
@@ -64,10 +64,14 @@ def analyze(signals: dict) -> list:
             else (1 if isinstance(sameas, str) else 0)
         )
         if sameas_count == 0:
+            # 定级与评分卡口径一致（prompts/score.md「Critical 五类」第 4 类）：
+            # 有 Organization 时 sameAs 空只削弱外部图谱对齐，不切断引用通路 → High。
+            # 仅「全站无 Organization」（品牌根本没锚定）才随该类别升 Critical，
+            # 那种情形由 homepage_no_organization 规则承担，与本规则互斥。
             issues.append(make_issue(
                 category="entity_graph",
                 kind="organization_no_sameas",
-                severity="Critical",
+                severity="High",
                 title="Organization schema 缺 sameAs，品牌实体无法与外部图谱对齐",
                 evidence={
                     "organization": {

@@ -495,11 +495,18 @@ span.hint-icon:hover{color:var(--orange);border-color:var(--orange)}
        回答：动手前必须先修什么？
        ══════════════════════════════════════════════════════════ #}
     {% if report.executive_summary.p0_blocking_note %}
-    {% set has_p0 = (report.findings | selectattr("severity", "equalto", "Critical") | list | length) > 0 %}
-    <div class="p0-gate {{ 'has-blocking' if has_p0 else 'no-blocking' }}" id="p0-gate">
+    {# 横幅配色必须跟「前置判定」正文同源：body 说「可进行」却标红是矛盾。
+       只有确定性阻塞（已确认、非 inferred）才标红；仅疑似阻塞时走绿色。 #}
+    {% if report.p0_blockers %}
+    {% set confirmed_p0 = (report.p0_blockers | rejectattr("confidence", "equalto", "inferred") | list | length) %}
+    {% else %}
+    {# 旧数据兜底：没有确定性阻塞清单时按 Critical finding 计数（与分析器口径一致） #}
+    {% set confirmed_p0 = (report.findings | selectattr("severity", "equalto", "Critical") | list | length) %}
+    {% endif %}
+    <div class="p0-gate {{ 'has-blocking' if confirmed_p0 > 0 else 'no-blocking' }}" id="p0-gate">
       <p class="p0-gate-label">P0 前置修改判定</p>
       <p class="p0-gate-body">{{ report.executive_summary.p0_blocking_note }}</p>
-      {% if has_p0 %}
+      {% if confirmed_p0 > 0 %}
       <a href="#p0-tier" class="p0-gate-jump">查看 P0 清单 ↓</a>
       {% endif %}
     </div>

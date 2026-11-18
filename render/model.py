@@ -84,6 +84,12 @@ class ReportData:
     strategic: list = field(default_factory=list)
     impact_estimate: str = ""
 
+    # P0 阻塞判定（diagnose/blockers.py 确定性算出的清单）。
+    # 报告横幅的配色与「查看 P0 清单」入口据此判断，而不是数 findings 里的
+    # Critical——分析器的形式缺失可以报 Critical，但不等于 P0 阻塞。
+    # None 表示旧数据/未跑 analyze，模板退回看 findings。
+    p0_blockers: list = field(default_factory=list)
+
     # ── 客户报告新增字段 ────────────────────────────────────
     executive_summary: ExecutiveSummary = field(default_factory=ExecutiveSummary)
     page_recommendations: list = field(default_factory=list)   # list[PageRecommendation]
