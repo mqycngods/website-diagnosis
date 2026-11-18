@@ -7,3 +7,6 @@ pyyaml>=6.0
 # tools/api_server.py（agent 平台 HTTP 工具服务）
 fastapi>=0.110
 uvicorn>=0.29
+
+# run_id 暂存后端 redis（STORE_BACKEND=redis 时需要；memory 后端不导入）
+redis>=5.0

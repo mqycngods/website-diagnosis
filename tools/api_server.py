@@ -14,7 +14,9 @@
      永远不给平台返回 422 json_invalid。
   2. 大数据按 run_id 暂存服务端（TTL 2h），平台只传 run_id 和小参数。
 
-注意：内存暂存要求单 worker（uvicorn 默认 1）；多 worker 部署需把 _STORE 换 Redis。
+注意：run_id 暂存后端由 STORE_BACKEND 选择。
+  - memory（默认）：进程内存，单副本可用，多副本会跨请求丢 run_id。
+  - redis：配 REDIS_URL 后启用，支持多副本与滚动更新。
 results/ 落盘在 Render 免费档是临时的，重新部署会丢。
 
 启动：
@@ -196,29 +198,135 @@ def _as_json(x: Any) -> Any:
 
 
 # ── run_id 暂存 ──────────────────────────────────────────────
+# 后端由环境变量选择：
+#   STORE_BACKEND=memory（默认）—— 进程内存 dict，单副本可用
+#   STORE_BACKEND=redis        —— 需同时配 REDIS_URL，支持多副本/滚动更新
 _STORE_TTL = 2 * 3600   # 2 小时过期
-_STORE_MAX = 50         # 最多同时保留 50 次诊断
-_STORE: dict = {}
+_STORE_MAX = 50         # 仅 memory 后端生效：最多同时保留 50 次诊断
+_STORE_BACKEND = os.environ.get("STORE_BACKEND", "memory").strip().lower()
+_REDIS_URL = os.environ.get("REDIS_URL", "").strip()
+_STORE_KEY_PREFIX = "sdzh:run:"
+
+
+class _RunStore:
+    """run_id → dict 的暂存接口。get 未命中统一抛 404。"""
+
+    def put(self, run_id: str, data: dict) -> None:
+        raise NotImplementedError
+
+    def get(self, run_id: str) -> dict:
+        raise NotImplementedError
+
+    def delete(self, run_id: str) -> None:
+        raise NotImplementedError
+
+
+class _MemoryStore(_RunStore):
+    def __init__(self) -> None:
+        self._data: dict = {}
+
+    def put(self, run_id: str, data: dict) -> None:
+        now = time.time()
+        for k in [k for k, (_, ts) in self._data.items() if now - ts > _STORE_TTL]:
+            self._data.pop(k, None)
+        while len(self._data) >= _STORE_MAX:
+            self._data.pop(min(self._data, key=lambda k: self._data[k][1]), None)
+        self._data[run_id] = (data, now)
+
+    def get(self, run_id: str) -> dict:
+        item = self._data.get(run_id)
+        if item is None or time.time() - item[1] > _STORE_TTL:
+            self._data.pop(run_id, None)
+            _raise_missing(run_id)
+        return item[0]
+
+    def delete(self, run_id: str) -> None:
+        self._data.pop(run_id, None)
+
+
+class _RedisStore(_RunStore):
+    """TTL 交给 Redis 的 SETEX；容量上限由 Redis maxmemory-policy 控制。"""
+
+    def __init__(self, url: str) -> None:
+        try:
+            import redis  # 延迟导入：memory 后端无需安装 redis 包
+        except ImportError as e:  # pragma: no cover
+            raise RuntimeError(
+                "STORE_BACKEND=redis 需要安装 redis 包（pip install redis）"
+            ) from e
+        # decode_responses=True：读回来直接是 str，省掉一层手工解码
+        self._r = redis.Redis.from_url(url, decode_responses=True, socket_timeout=5)
+
+    def _key(self, run_id: str) -> str:
+        return f"{_STORE_KEY_PREFIX}{run_id}"
+
+    def put(self, run_id: str, data: dict) -> None:
+        try:
+            payload = json.dumps(data, ensure_ascii=False, default=str)
+            self._r.setex(self._key(run_id), _STORE_TTL, payload)
+        except Exception as e:
+            # 落库失败比静默成功安全：让上游看到 5xx 而不是后续 run_id 找不到
+            raise HTTPException(
+                status_code=503,
+                detail=f"run_id 暂存失败（Redis 不可用）：{e}",
+            ) from e
+
+    def get(self, run_id: str) -> dict:
+        try:
+            raw = self._r.get(self._key(run_id))
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"run_id 暂存读取失败（Redis 不可用）：{e}",
+            ) from e
+        if raw is None:
+            _raise_missing(run_id)
+        try:
+            data = json.loads(raw)
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"run_id 「{run_id}」暂存数据损坏：{e}",
+            ) from e
+        if not isinstance(data, dict):
+            _raise_missing(run_id)
+        return data
+
+    def delete(self, run_id: str) -> None:
+        try:
+            self._r.delete(self._key(run_id))
+        except Exception:
+            pass  # 删除失败不影响主流程
+
+
+def _raise_missing(run_id: str) -> None:
+    raise HTTPException(
+        status_code=404,
+        detail=f"run_id 「{run_id}」不存在或已过期（2 小时有效）——请重新跑 diagnose_run",
+    )
+
+
+def _make_store() -> _RunStore:
+    if _STORE_BACKEND == "redis":
+        if not _REDIS_URL:
+            raise RuntimeError("STORE_BACKEND=redis 但未配置 REDIS_URL")
+        return _RedisStore(_REDIS_URL)
+    if _STORE_BACKEND != "memory":
+        raise RuntimeError(
+            f"未知 STORE_BACKEND={_STORE_BACKEND}（只能是 memory 或 redis）"
+        )
+    return _MemoryStore()
+
+
+_STORE: _RunStore = _make_store()
 
 
 def _store_put(run_id: str, data: dict) -> None:
-    now = time.time()
-    for k in [k for k, (_, ts) in _STORE.items() if now - ts > _STORE_TTL]:
-        _STORE.pop(k, None)
-    while len(_STORE) >= _STORE_MAX:
-        _STORE.pop(min(_STORE, key=lambda k: _STORE[k][1]), None)
-    _STORE[run_id] = (data, now)
+    _STORE.put(run_id, data)
 
 
 def _store_get(run_id: str) -> dict:
-    item = _STORE.get(run_id)
-    if item is None or time.time() - item[1] > _STORE_TTL:
-        _STORE.pop(run_id, None)
-        raise HTTPException(
-            status_code=404,
-            detail=f"run_id 「{run_id}」不存在或已过期（2 小时有效）——请重新跑 diagnose_run",
-        )
-    return item[0]
+    return _STORE.get(run_id)
 
 
 # ── 报告落盘 + 在线访问 ──────────────────────────────────────

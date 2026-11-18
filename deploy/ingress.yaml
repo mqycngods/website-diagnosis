@@ -1,0 +1,68 @@
+# plat-arch-site-diagnosis-zh — 集群外访问（Ingress）
+#
+# 前置条件：
+#   1. 集群已装 Ingress Controller
+#        kubectl get ingressclass
+#   2. Service plat-arch-site-diagnosis-zh 存在且 endpoints 非空
+#        kubectl -n commercial-platform get endpoints plat-arch-site-diagnosis-zh
+#   3. site-diagnosis.qihoo.net 已解析到 Ingress Controller 的入口 IP/LB
+#
+# 应用：
+#   kubectl -n commercial-platform apply -f deploy/ingress.yaml
+#
+# 注意：API Key 通过 X-API-Key 头传递，公网暴露必须启用 TLS，
+#       否则 key 明文传输。TLS 需要证书 Secret，见文件末尾说明。
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: plat-arch-site-diagnosis-zh
+  namespace: commercial-platform
+  labels:
+    app: plat-arch-site-diagnosis-zh
+    stark-app: plat-arch
+    stark-ns: commercial-platform
+  annotations:
+    # 抓取 + 渲染是重活，单次诊断可能几十秒；默认 60s 会截断长请求
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    # 报告 HTML 体积较大
+    nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+spec:
+  # 按 `kubectl get ingressclass` 的实际输出改
+  ingressClassName: nginx
+  # TLS 启用后取消注释，证书 Secret 需提前创建（见文末）
+  # tls:
+  #   - hosts:
+  #       - site-diagnosis.qihoo.net
+  #     secretName: plat-arch-site-diagnosis-zh-tls
+  rules:
+    - host: site-diagnosis.qihoo.net
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: plat-arch-site-diagnosis-zh
+                port:
+                  number: 80
+---
+# ── TLS 证书（二选一）─────────────────────────────────────────────
+# 方式 A：已有证书文件，手工创建 Secret
+#   kubectl -n commercial-platform create secret tls plat-arch-site-diagnosis-zh-tls \
+#     --cert=path/to/fullchain.pem --key=path/to/privkey.pem
+#
+# 方式 B：cert-manager 自动签发（集群装了 cert-manager 才能用）
+# apiVersion: cert-manager.io/v1
+# kind: Certificate
+# metadata:
+#   name: plat-arch-site-diagnosis-zh-tls
+#   namespace: commercial-platform
+# spec:
+#   secretName: plat-arch-site-diagnosis-zh-tls
+#   dnsNames:
+#     - site-diagnosis.qihoo.net
+#   issuerRef:
+#     name: letsencrypt-prod
+#     kind: ClusterIssuer

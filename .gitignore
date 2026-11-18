@@ -2,3 +2,9 @@
 /.codegraph
 .netlify
 .DS_Store
+
+# 部署环境变量（含真实 API Key），只提交 .env.example
+.env
+deploy/.env
+!deploy/.env.example
+.DS_Store

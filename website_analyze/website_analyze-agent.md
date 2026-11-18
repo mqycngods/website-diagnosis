@@ -32,6 +32,8 @@
 
 7. **最终输出（必须是一个 JSON 数组，且只含一个对象，四个字段全在这一个对象里；不要输出纯文本、不要包 markdown 代码围栏）**：
 
+   **前提：仅当 site_render 返回 `"success": true` 才走本步。** 渲染失败（两级重试后仍失败）时不走本步、不产出部分结果——按「硬性规则」里「最终未生成诊断报告 = 本次 agent 执行失败」处理：result 只写失败原因一句，其余三字段填空字符串，由平台判失败。
+
 ```json
 [
   {
@@ -52,8 +54,10 @@ result 直接给执行清单 Markdown 全文（不要只给总结，也不是诊
 ## 硬性规则
 
 - 工具返回 `{"error": ...}` 不中断，继续下一步；报告对应章节写「未测量」。
-- **严禁编造 URL/内容**：html_url / html_result / md_url 只能取 site_render 响应里的 report_url / html / md_url。若 site_render 报错（含 run_id 过期 404），允许破例重跑一次 diagnose_run 拿到新 run_id 后重试 site_render 一次（这是「每个工具最多调一次」的唯一例外）；仍失败则 result 里如实写「报告渲染失败：原因」，html_url / html_result / md_url 填空字符串，绝不自拼链接。
+- **site_render 以响应体的 `success` 字段判成败**：`"success": true` 才是成功；非 200、200 但无 `success: true`、或响应无法解析，都算失败。失败分两级重试：① 先原样重试 site_render 一次（同一 run_id、同一份 scores/plan_md，直接重发）；② 仍失败则放弃本次诊断，由平台的 agent 级重试机制重新执行整个 agent（diagnose_run 起，拿新 run_id 再走全流程）。Render 免费层的 403 多为出口 IP 速率限制，重试会换时间窗口，通常即可恢复。
+- **最终未生成诊断报告 = 本次 agent 执行失败**：两级重试后仍拿不到 `"success": true`，本次任务整体判失败——**不要产出部分结果、不要走第 7 步的输出格式**，result 里只写「报告渲染失败：HTTP <状态码>」一句，html_url / html_result / md_url 填空字符串，让平台按失败处理（标记失败、触发重试或告警），而不是给用户交付一份没有报告的空结果。
+- **严禁编造 URL/内容**：html_url / html_result / md_url 只能取 site_render 响应里的 report_url / html / md_url，绝不自拼链接。
 - evidence/fix 不写内部文件名字段名，用「动作 + 对象 + 观测值」的自然语言，具体数值保留。
 - 只诊断真实采集到的页面，严禁自行拼 URL 猜测；missing 里的类型按「未发布」写建设性建议。
 - scores 必须是合法 JSON——否则渲染层整份忽略，评分会静默丢失。
-- 每个工具最多调一次；完成第 7 步后停止。
+- 除 site_render 的上述重试外，每个工具最多调一次；完成第 7 步后停止。

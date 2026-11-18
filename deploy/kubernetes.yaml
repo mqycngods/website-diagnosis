@@ -1,0 +1,192 @@
+# plat-arch-site-diagnosis-zh — FastAPI 服务部署到 Kubernetes
+#
+# 推荐流程（配置集中在 deploy/.env）：
+#   1. cp deploy/.env.example deploy/.env       # 填写真实 key
+#   2. ./deploy/apply-secrets.sh               # 生成 Secret + ConfigMap
+#   3. kubectl apply -f deploy/kubernetes.yaml # 建 PVC / Deployment / Service
+#
+# 镜像构建推送：
+#   docker buildx build --platform linux/amd64 -f Dockerfile \
+#     -t harbor.qihoo.net/commercial-platform-plat-arch/site-diagnosis-zh:<TAG> --push .
+#
+# Secret 里只有 SITE_DIAGNOSIS_API_KEY；PORT / GEO_HTTP_BACKEND 等非敏感项走
+# ConfigMap（两者都由 apply-secrets.sh 生成）。ConfigMap 条目是 optional 的，
+# 缺失时回落到镜像内 ENV 默认值，不会阻塞启动。
+#
+# Harbor 私有项目需要拉取凭证（集群已存在同名 Secret 则跳过）：
+#   kubectl -n <NAMESPACE> create secret docker-registry harbor-regcred \
+#     --docker-server=harbor.qihoo.net \
+#     --docker-username='<user>' --docker-password='<password>'
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: plat-arch-site-diagnosis-zh-results
+  labels:
+    app: plat-arch-site-diagnosis-zh
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  # 按集群实际情况填写；留空则用默认 StorageClass
+  # storageClassName: <你的 storageclass>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plat-arch-site-diagnosis-zh
+  labels:
+    app: plat-arch-site-diagnosis-zh
+spec:
+  # STORE_BACKEND=redis 后 run_id 存在 Redis，可安全多副本 + 滚动更新。
+  # 若暂时仍用 memory 后端（不配 REDIS_URL），必须把 replicas 改回 1、
+  # 且 strategy 改回 Recreate，否则跨请求会随机丢 run_id。
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0   # 新 Pod 先 Ready 再摘旧 Pod，发布期间不断流
+  selector:
+    matchLabels:
+      app: plat-arch-site-diagnosis-zh
+  template:
+    metadata:
+      labels:
+        app: plat-arch-site-diagnosis-zh
+    spec:
+      # Harbor 私有项目拉取凭证；公开项目可删掉这段
+      imagePullSecrets:
+        - name: harbor-regcred
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: app
+          image: harbor.qihoo.net/commercial-platform-plat-arch/site-diagnosis-zh:20261117
+          # 远程仓库必须 Always：否则节点上缓存的 latest 不会更新
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: SITE_DIAGNOSIS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: plat-arch-site-diagnosis-zh-secret
+                  key: SITE_DIAGNOSIS_API_KEY
+            # 非敏感运行时变量由 ConfigMap 提供（deploy/apply-secrets.sh 生成）。
+            # optional: true —— ConfigMap 不存在时用镜像内 ENV 默认值，不阻塞启动。
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: plat-arch-site-diagnosis-zh-config
+                  key: PORT
+                  optional: true
+            - name: GEO_HTTP_BACKEND
+              valueFrom:
+                configMapKeyRef:
+                  name: plat-arch-site-diagnosis-zh-config
+                  key: GEO_HTTP_BACKEND
+                  optional: true
+            # ── run_id 暂存后端 ───────────────────────────────
+            # redis：run_id 存 Redis，支持多副本。删掉这两项则回落 memory 后端
+            # （此时必须把 replicas 改回 1 + strategy=Recreate）。
+            - name: STORE_BACKEND
+              value: redis
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: plat-arch-site-diagnosis-zh-secret
+                  key: REDIS_URL
+                  optional: true
+          # 抓取 + 解析大页面 + 渲染大 HTML，峰值内存不低；
+          # 若被 OOMKilled，内存里的 run_id 会全部丢失，正在进行的诊断直接中断。
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          # 用 /health（轻量）而不是 /openapi.json（要序列化整份 schema）
+          # start-period 给 uvicorn 导入 diagnose/render 的时间
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # 采集/渲染是 CPU 重活，可能短暂占满；
+          # 这里只判进程是否还活着，不因慢请求误杀
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            # 报告落盘目录；挂 PVC 后 Pod 重建不会丢历史报告链接
+            - name: results
+              mountPath: /app/results
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: results
+          persistentVolumeClaim:
+            claimName: plat-arch-site-diagnosis-zh-results
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plat-arch-site-diagnosis-zh
+  labels:
+    app: plat-arch-site-diagnosis-zh
+spec:
+  type: ClusterIP
+  selector:
+    app: plat-arch-site-diagnosis-zh
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+---
+# 可选：需要集群外访问再启用。先确认集群实际的 Ingress Controller 名称。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: plat-arch-site-diagnosis-zh
+  labels:
+    app: plat-arch-site-diagnosis-zh
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: site-diagnosis.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: plat-arch-site-diagnosis-zh
+                port:
+                  number: 80

@@ -1,0 +1,127 @@
+# plat-arch-site-diagnosis-zh — Redis（run_id 暂存后端）
+#
+# 用途：把 tools/api_server.py 的 _STORE 从进程内存换成 Redis，
+# 从而解除「必须单副本」限制，支持多副本与滚动更新。
+#
+# 应用：
+#   kubectl -n commercial-platform apply -f deploy/redis.yaml
+#
+# 前提：镜像版本必须支持 STORE_BACKEND=redis（2026-11-17 之后构建的镜像）。
+#
+# 生产建议：改用 bitnami/redis Helm chart（带密码、持久化、监控）。
+# 本文件是内网单实例的最小可用配置。
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: plat-arch-site-diagnosis-redis-secret
+  namespace: commercial-platform
+  labels:
+    app: plat-arch-site-diagnosis-redis
+type: Opaque
+stringData:
+  # 部署前替换为强密码；改完需同步更新 deployment 里的 REDIS_URL
+  REDIS_PASSWORD: "change-me-redis-password"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plat-arch-site-diagnosis-redis
+  namespace: commercial-platform
+  labels:
+    app: plat-arch-site-diagnosis-redis
+    stark-app: plat-arch
+    stark-ns: commercial-platform
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: plat-arch-site-diagnosis-redis
+  template:
+    metadata:
+      labels:
+        app: plat-arch-site-diagnosis-redis
+        stark-app: plat-arch
+        stark-ns: commercial-platform
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command:
+            - redis-server
+          args:
+            - "--requirepass"
+            - "$(REDIS_PASSWORD)"
+            # 容量上限：单次诊断数据可能几十 KB ~ 数 MB，256MB 可容纳上百条
+            - "--maxmemory"
+            - "256mb"
+            # allkeys-lru：超限时淘汰最久未用的 run_id。
+            # 注意：此策略会淘汰实例内所有 key，故本实例专用于本服务。
+            - "--maxmemory-policy"
+            - "allkeys-lru"
+            # 落盘关掉：run_id 只有 2 小时生命周期，重启丢数据可接受
+            # （客户端会收到 404 并重跑 collect）
+            - "--save"
+            - ""
+            - "--appendonly"
+            - "no"
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: plat-arch-site-diagnosis-redis-secret
+                  key: REDIS_PASSWORD
+          ports:
+            - name: redis
+              containerPort: 6379
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          # /health 需要密码，用 redis-cli 带密码探活
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plat-arch-site-diagnosis-redis
+  namespace: commercial-platform
+  labels:
+    app: plat-arch-site-diagnosis-redis
+spec:
+  type: ClusterIP
+  selector:
+    app: plat-arch-site-diagnosis-redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+      protocol: TCP

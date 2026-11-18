@@ -1,0 +1,17 @@
+.git
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+venv/
+tests/
+fixtures/
+results/
+work/
+website_analyze/
+website_analyze.zip
+dify-site-diagnosis-zh/
+scripts/
+assets/
+*.md
+!README.md

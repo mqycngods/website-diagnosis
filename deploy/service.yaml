@@ -1,0 +1,33 @@
+# plat-arch-site-diagnosis-zh — Service
+#
+# 只写 Deployment 不会让服务可被调用：Pod 有 IP 但它是临时的，
+# 重建就变。Service 提供一个稳定的集群内 DNS 名和 ClusterIP。
+#
+# 应用：
+#   kubectl -n commercial-platform apply -f deploy/service.yaml
+#
+# 确认挂到了正确的 Pod：
+#   kubectl -n commercial-platform get endpoints plat-arch-site-diagnosis-zh
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plat-arch-site-diagnosis-zh
+  labels:
+    app: plat-arch-site-diagnosis-zh
+    stark-app: plat-arch
+    stark-ns: commercial-platform
+spec:
+  # ClusterIP：只在集群内可达，平台工作流用集群内地址调用。
+  # 需要集群外访问再改 NodePort/LoadBalancer 或加 Ingress。
+  type: ClusterIP
+  selector:
+    # 必须是 Deployment 里 template.labels 的子集。
+    # Deployment 的 selector 是 app + stark-res，这里只写 app 更稳妥：
+    # 平台若调整 stark-* 标签，Service 不会跟着失联。
+    app: plat-arch-site-diagnosis-zh
+  ports:
+    - name: http
+      port: 80          # 集群内访问端口
+      targetPort: 8000  # 容器里 uvicorn 实际监听的端口
+      protocol: TCP

@@ -1,0 +1,22 @@
+# 使用阿里云镜像源的nginx:alpine作为基础镜像
+FROM nginx:alpine
+
+# 设置时区为上海
+ENV TZ=Asia/Shanghai
+
+# 可以在这里添加自定义配置或修改
+# 例如：复制自定义nginx配置文件
+# COPY nginx.conf /etc/nginx/nginx.conf
+
+# 设置标签
+LABEL maintainer="website-diagnosis"
+LABEL description="Nginx alpine base image for website-diagnosis"
+
+# 设置工作目录
+WORKDIR /etc/nginx
+
+# 暴露端口
+EXPOSE 80 443
+
+# 启动nginx
+CMD ["nginx", "-g", "daemon off;"]
