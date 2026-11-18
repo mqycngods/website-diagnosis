@@ -541,9 +541,23 @@ async def render(request: Request, _key: str = Depends(require_api_key)):
     if not url.strip():
         # 平台 {{var}} 全空时之前会渲染出 site-geo-report.html 垃圾报告，
         # agent 还会把假链接写进最终输出。直接报错让上游发现参数映射问题。
+        # detail 里带上定位所需的最小事实，避免只能看到一句「缺少 url」。
+        _stored_has_url = "-"
+        if run_id:
+            try:
+                _s = _store_get(run_id)
+                _stored_has_url = repr(_s.get("url"))[:120]
+            except HTTPException:
+                _stored_has_url = "run_id 未命中"
+            except Exception as e:  # noqa: BLE001
+                _stored_has_url = f"读取异常: {e}"
         raise HTTPException(
             status_code=400,
-            detail="render 缺少 url（run_id 未命中或变量为空）——请检查平台工具的参数映射与请求体",
+            detail=(
+                "render 缺少 url（run_id 未命中或变量为空）——请检查平台工具的参数映射与请求体"
+                f"｜run_id={run_id!r} body_keys={sorted(body.keys())}"
+                f" body.url={body.get('url')!r} stored.url={_stored_has_url}"
+            ),
         )
     safe_domain = _NAME_SAFE.sub("_", domain) or "site"
     filename = f"{safe_domain}_geo_report.html"
