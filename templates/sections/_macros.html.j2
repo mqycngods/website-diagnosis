@@ -9,7 +9,7 @@
 {# 子章节头：用于 Group 内的二级 section，视觉权重低于 section_head #}
 {% macro sub_head(title, subtitle, tag_text, tag_class) %}
 <div class="sub-head">
-  <div class="sub-head-title-row"><h3>{{ title }}</h3>{% if subtitle %}<span class="hint-icon" data-hint="{{ subtitle | e }}">!</span>{% endif %}</div>
+  <div class="sub-head-title-row"><h3>{{ title }}</h3>{% if subtitle %}<span class="hint-icon" data-hint="{{ subtitle | e }}" role="img" aria-label="说明">?</span>{% endif %}</div>
   {% if tag_text %}<span class="section-tag status {{ tag_class }}">{{ tag_text }}</span>{% endif %}
 </div>
 {% endmacro %}

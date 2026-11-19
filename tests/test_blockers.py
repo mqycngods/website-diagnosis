@@ -42,14 +42,15 @@ def _dated_pages(n, with_date=True):
             "product_pages": []}
 
 
-def _run(fetch=None, bots=None, schema=None, issues=None, articles=None):
+def _run(fetch=None, bots=None, schema=None, issues=None, articles=None, robots=None):
     return compute_p0_blockers(
         fetch=fetch if fetch is not None else _fetch(),
         bots=bots if bots is not None else _bots(),
         schema=schema if schema is not None
         else {"has_organization": True, "sampled": {"homepage": 1, "article_pages": 3}},
         issues=issues if issues is not None else {},
-        articles=articles if articles is not None else {})
+        articles=articles if articles is not None else {},
+        robots=robots)
 
 
 # ── 基线场景 ─────────────────────────────────────────────────
@@ -130,7 +131,8 @@ def test_cap_keeps_deterministic_blockers():
     """确定性阻塞保持 Critical——它们本来就会让横幅判红。"""
     from diagnose.blockers import cap_severity_p0
     for kind in ("fetch_failed", "no_ssr", "retrieval_bots_blocked",
-                 "homepage_zero_jsonld", "author_mismatch_template"):
+                 "homepage_zero_jsonld", "author_mismatch_template",
+                 "robots_disallow_all"):
         assert cap_severity_p0("Critical", kind) == "Critical"
 
 

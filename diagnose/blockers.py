@@ -83,15 +83,18 @@ _FRESHNESS_MIN_SAMPLES = 3
 _P0_WHITELIST = {
     "fetch_failed", "no_ssr", "retrieval_bots_blocked",
     "homepage_zero_jsonld", "author_mismatch_template",
+    "robots_disallow_all",
 }
 
 # 每条规则的排除边界（原则 5：评审时逐条核对「什么时候不该触发」）。
+
 # key 为 blocker key，value 为该规则明确排除、不升 P0 的情形。
 RULE_EXCLUSIONS = {
     "fetch_failed": ["DNS/网络瞬时抖动由上层重试吸收；这里只认最终抓取结果"],
     "challenge_page": ["间歇性挑战（偶发拦一次）不算——evidence 标注 inferred，报告端软化措辞"],
     "no_ssr": ["has_ssr_content 字段缺失（未探测）不算"],
     "retrieval_bots_blocked": ["训练类爬虫被拦不算（不切断检索通路）"],
+    "robots_disallow_all": ["robots.txt 不存在（404）或无法解析不算——无法确认配置意图"],
     "thin_content": ["有实质正文但可引用性低不算（内容质量，High）",
                      "no_ssr 命中时抑制（同根因）"],
     "no_heading_structure": ["词数 ≥150 不算；no_ssr 命中时抑制"],
@@ -133,7 +136,7 @@ def _blocker(key: str, class_key: str, class_name: str, title: str,
 
 
 def compute_p0_blockers(*, fetch: dict, bots: dict, schema: dict,
-                        issues: dict, articles: dict) -> list:
+                        issues: dict, articles: dict, robots: dict = None) -> list:
     """从实测数据计算 P0 阻塞清单。输入缺失/报错时对应类别跳过（不误判）。
 
     抑制链（原则 2）：fetch 失败 → ②④⑤ 短路；no_ssr → 抑制
@@ -149,6 +152,16 @@ def compute_p0_blockers(*, fetch: dict, bots: dict, schema: dict,
             "fetch_failed", "access", "抓取通道被切断",
             "首页抓取失败",
             f"fetch 返回错误：{fetch.get('error')}",
+            "deterministic"))
+    elif isinstance(fetch, dict) and fetch.get("status_code") is None \
+            and fetch.get("errors"):
+        # 历史数据形状：fetch_page 早期只把异常写进 errors 列表、不写顶层
+        # error。若不识别，报告会显示「可进行 GEO 优化」+ 30 分堪忧（2026-11 修）。
+        fetch_failed = True
+        blockers.append(_blocker(
+            "fetch_failed", "access", "抓取通道被切断",
+            "首页抓取失败",
+            f"fetch 未取得响应：{fetch.get('errors')[-1]}",
             "deterministic"))
     elif isinstance(fetch, dict) and isinstance(fetch.get("status_code"), int) \
             and fetch["status_code"] >= 400:
@@ -178,16 +191,51 @@ def compute_p0_blockers(*, fetch: dict, bots: dict, schema: dict,
             "AI 爬虫（不执行 JS）读不到正文",
             "deterministic"))
 
+    # ── ① 抓取通道被切断：声明层（robots.txt）+ 实测层（UA 重放）────────
+    # 声明层：robots.txt 全禁（Disallow: / 通配）——无歧义的配置错误。
+    # 即使实测放行（爬虫当前忽略 robots 继续抓），声明意图就是「不让爬」，
+    # 一旦 OpenAI/Anthropic 收紧 robots 遵从策略，引用瞬间断供。
+    # 按「声明或实测任一断供即 P0」的统一口径处理（2026-11-19 定）。
+    robots_disallow_all = False
+    robots_blocked_names = []
+    if _ok(robots) and robots.get("exists"):
+        for bot, status in (robots.get("ai_crawler_status") or {}).items():
+            if status in ("BLOCKED", "BLOCKED_BY_WILDCARD"):
+                robots_blocked_names.append(bot)
+        if robots_blocked_names:
+            robots_disallow_all = True
+
+    # 实测层：UA 重放真的被拦
+    blocked_retrieval = []
     if _ok(bots):
         blocked_retrieval = [p.get("bot") for p in bots.get("probes") or []
                              if isinstance(p, dict) and p.get("blocked")
                              and p.get("class") in _RETRIEVAL_CLASSES and p.get("bot")]
-        if blocked_retrieval:
-            blockers.append(_blocker(
-                "retrieval_bots_blocked", "access", "抓取通道被切断",
-                f"检索类 AI 爬虫被拦（{len(blocked_retrieval)} 个）",
-                "被拦：" + "、".join(blocked_retrieval),
-                "deterministic"))
+
+    if robots_disallow_all and blocked_retrieval:
+        # 声明与实测都断供：合并为一条，证据双倍确凿（原则 2：同根因只报一条）
+        blockers.append(_blocker(
+            "retrieval_bots_blocked", "access", "抓取通道被切断",
+            f"AI 爬虫被 robots.txt 全禁且实测确认被拦（{len(blocked_retrieval)} 个检索类）",
+            f"robots.txt 声明层全禁（{len(robots_blocked_names)} 个爬虫 BLOCKED/BLOCKED_BY_WILDCARD），"
+            f"UA 重放实测同样被拦：{'、'.join(blocked_retrieval)}——声明与实测双重断供",
+            "deterministic"))
+    elif robots_disallow_all:
+        # 声明全禁但实测放行：配置错误，政策收紧即断供
+        blockers.append(_blocker(
+            "robots_disallow_all", "access", "抓取通道被切断",
+            "robots.txt 全站 Disallow: /，声明层全禁（实测暂未生效）",
+            f"robots.txt 对 {len(robots_blocked_names)} 个 AI/搜索爬虫声明全禁"
+            f"（{'、'.join(robots_blocked_names[:4])}{' 等' if len(robots_blocked_names) > 4 else ''}），"
+            "UA 重放实测仍能抓取——爬虫当前忽略 robots 继续抓，"
+            "但配置意图与现状矛盾，一旦爬虫政策收紧，引用通路即刻断供",
+            "deterministic"))
+    elif blocked_retrieval:
+        blockers.append(_blocker(
+            "retrieval_bots_blocked", "access", "抓取通道被切断",
+            f"检索类 AI 爬虫被拦（{len(blocked_retrieval)} 个）",
+            "被拦：" + "、".join(blocked_retrieval),
+            "deterministic"))
 
     # fetch 失败时 ②④⑤ 均无从谈起——短路，只报抓取类（原则 2）
     if not fetch_failed:
@@ -292,7 +340,7 @@ def p0_blocking_note(blockers: list) -> str:
             f"{s_titles}{more}——建议复测后再定优先级。")
 
 
-def cap_severity_p0(severity: str, kind: str) -> str:
+def cap_severity_p0(severity: str, kind: str, blockers: "list | None" = None) -> str:
     """把 P0 白名单之外的问题从 Critical 降到 High（评分卡口径的唯一出口）。
 
     背景：agent 的 scores.json 与分析器都可以写 Critical，而报告横幅、
@@ -302,14 +350,22 @@ def cap_severity_p0(severity: str, kind: str) -> str:
     否则同一份报告会出现「可进行 GEO 优化」横幅 + 红色 P0 清单（
     creativehit.ai 报告即此）。
 
-    白名单与 compute_p0_blockers 的确定性判定一一对应：
-      抓取失败 / 无 SSR / 检索类爬虫被拦 / 首页零 JSON-LD /
-      白名单 consistency Critical（author_mismatch_template）
-    推断类（正文极薄、无标题层级、全站无日期、挑战页）不算 P0，一并降级。
+    「唯一裁判」的落地方式（2026-11 修）：传了 blockers 时，只有**实际
+    命中**的确定性 blocker key 才放行 Critical——而不是查白名单常量。
+    历史问题：旧实现接受 agent 自报的 kind（`f.get("kind")`）并且用标题
+    正则猜 kind，两处都可绕过：
+      · 标题含「结构化数据」的产品页 schema 问题被猜成 homepage_zero_jsonld
+        → 横幅写「可动工」却出现 P0 卡；
+      · agent 自写 kind="no_ssr"（站点 SSR 正常）同样进 P0。
+    现在 kind 只用于「映射到 blocker key」，最终裁判是 blockers 集合。
+
+    未传 blockers（旧数据/调用方未算）时退回白名单常量，保持向后兼容。
     """
     if severity != "Critical":
         return severity
-    if kind in _P0_WHITELIST:
-        return severity
-    return "High"
+    allowed = _P0_WHITELIST
+    if blockers is not None:
+        allowed = {b.get("key") for b in blockers
+                   if isinstance(b, dict) and b.get("confidence") != "inferred"}
+    return severity if kind in allowed else "High"
 

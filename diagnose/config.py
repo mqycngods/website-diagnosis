@@ -14,6 +14,7 @@ _DEFAULTS = {
         "sitemap_timeout": 10, "sitemap_limit": 500,
         "discovery_sitemap_limit": 200,
         "sample_articles": 5, "sample_products": 3, "polite_delay": 1,
+        "expand_list_pages": True, "list_page_limit": 3,
     },
     "scoring": {
         "weights": {

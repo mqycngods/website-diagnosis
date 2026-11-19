@@ -140,12 +140,11 @@ def _iter_blocks(soup):
 def _wc(text: str) -> int:
     """中英文混合的"词数"估计：英文按空格分词，中文按字符计。
 
-    中文没有空格分词，直接用 .split() 会把整段当成 1 个"词"，导致长度带判定
-    与统计逻辑全部失效。取 空格词数 + CJK 字符数 作为近似词数。
+    实现统一在 diagnose/text_metrics.py，与 fetch 的 word_count 同一口径，
+    避免两套度量并存导致同一页面在不同章节得出相反的"薄/厚"结论。
     """
-    latin_words = len([w for w in text.split() if not _CJK.search(w)])
-    cjk_chars = len(_CJK.findall(text))
-    return latin_words + cjk_chars
+    from .text_metrics import word_count
+    return word_count(text)
 
 
 def _score_passage(text: str, heading: str = "") -> dict:

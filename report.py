@@ -166,9 +166,11 @@ def cmd_collect(url: str, out_dir: Path, cache_dir: Path = None):
         robots = _err(f"robots 解析失败：{e}")
     _write(out_dir, "robots.json", robots)
 
-    # 4. bots UA 实测
+    # 4. bots UA 实测（robots 声明全禁时实测分封顶 60，与 pipeline 同源）
     try:
         bots = bots_mod.probe_bots(url, delay=float(cfg("crawler.polite_delay", 1)))
+        from diagnose.pipeline import _apply_robots_cap
+        bots = _apply_robots_cap(bots, robots)
     except Exception as e:
         bots = _err(f"爬虫实测失败：{e}")
     _write(out_dir, "bots.json", bots)

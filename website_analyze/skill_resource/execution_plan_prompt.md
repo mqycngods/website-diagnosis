@@ -45,6 +45,11 @@ findings 的 `severity` 与任务 `priority` 是同一条轴上的两套词，�
 
 **P0 红线**：Critical 是「通路/可信度」问题，不是「内容质量」问题。修复成本只影响排序、不影响定级——Wikidata 词条、媒体报道积累即使影响大也绝不进 P0。**「有实质正文但可引用性低」（如 871 词 0 数字、段落全 D 级）是内容质量问题，不是阻塞**——阻塞让 AI「读不到」，低可引用性只是「不想引」；此类任务最高 P1。
 
+**双向追溯（硬性，与诊断报告条项对齐的唯一手段）**：
+- 正向：清单中每个任务必须能回溯到 scores.json 里 `findings` / `quick_wins` / `medium_term` / `strategic` 的某一项（或 `p0_blockers` 里某条阻塞），禁止自造任务。
+- **反向：scores.json 里 `quick_wins` / `medium_term` / `strategic` 的每一项、每条 findings（同根因允许合并）都必须在清单里有一条对应任务**——诊断报告的行动清单只展示 scores.json 的内容，清单里漏掉 = 报告里也丢了，两份产物不再同源。
+- 数量预期（8–14 项）服从于反向全覆盖：若 scores.json 项数超过 14，按同根因合并到 14 以内，不允许直接丢弃。
+
 ## 任务字段（每个任务必填）
 
 ```text
@@ -98,3 +103,4 @@ status           未开始 / 进行中 / 待验收 / 已完成
 4. **双向 P0 对齐**：每个 P0 任务是否都对应 `p0_blockers` 里的一条阻塞项？**且 `p0_blockers` 里每条阻塞项是否都有一条对应任务（一条不漏）**？
 5. **Critical 全覆盖**：scores.json 里每条 Critical finding 是否都在清单中有对应任务？
 6. 有无任务其实是另一任务的子步骤（写 sameAs 数组 vs 注册 Wikidata 词条）？
+7. **双向追溯**：清单每个任务能否回溯到 scores.json 的某项？scores.json 的 findings / quick_wins / medium_term / strategic 每一项是否都在清单里有对应任务（同根因可合并，但不允许静默丢弃）？

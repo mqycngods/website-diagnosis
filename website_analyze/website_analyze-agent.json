@@ -42,7 +42,7 @@
         "description": "报告 HTML 全文（逐字复制 site_render 返回的 html 字段，通常数万字符；禁止占位/摘要/截断；输出时放最后一个字段）"
       }
     ],
-    "temperature": 0.7,
+    "temperature": 0.3,
     "max_retries": 3,
     "timeout_seconds": 1200,
     "skill_refs": [
@@ -82,17 +82,17 @@
         {
           "type": "string",
           "field": "url",
-          "required": false,
+          "required": true,
           "description": "诊断官网"
         }
       ],
       "url_config": {
-        "url": "https://website-diagnosis-amhp.onrender.com/api/collect",
+        "url": "http://10.224.154.206/collect",
         "body": "{\"url\": \"{{url}}\"}",
         "method": "POST",
         "params": {},
         "headers": {
-          "X-API-Key": "dg2fjgthISORePJ3cYtiws9RcCvsGlyEWLshikBr1gc",
+          "X-API-Key": "stpTeSywdupakynD7rz5d0JWL9QsUqds",
           "Content-Type": "application/json"
         },
         "timeout": 120,
@@ -104,7 +104,7 @@
     {
       "tool_name": "动态站补抓",
       "tool_name_en": "site_rescan",
-      "description": "动态站补抓（仅 articles.pending_agent_pick == true 时调用）",
+      "description": "动态站补抓（仅 articles.pending_agent_pick == true 时调用）。articles 必须是文章详情页 URL，不能传 /blog、/news、/insights 这类栏目列表页——列表页无发布日期，会导致「全站无机器可读日期」误判。",
       "tool_type": 1,
       "input_params": [
         {
@@ -117,22 +117,22 @@
           "type": "string",
           "field": "articles",
           "required": true,
-          "description": "文章 URL 列表（JSON 数组字符串）"
+          "description": "文章详情页 URL 列表（3–5 篇，必须是 /blog/<slug> 这类详情页，不要传栏目列表页）。传原始 JSON 数组文本，例如 [\"https://a.com/blog/post-1\",\"https://a.com/blog/post-2\"]；不要整体再加一层引号，也不要传对象包装。"
         },
         {
           "type": "string",
           "field": "products",
           "required": true,
-          "description": "产品 URL 列表（JSON 数组字符串）"
+          "description": "产品 URL 列表。传原始 JSON 数组文本，例如 [\"https://a.com/p1\"]；不要整体再加一层引号，也不要传对象包装。"
         }
       ],
       "url_config": {
-        "url": "https://website-diagnosis-amhp.onrender.com/api/rescan",
-        "body": "{\n  \"run_id\": \"{{run_id}}\",\n  \"agent_picks\": {\n    \"articles\": {{articles}},\n    \"products\": {{products}}\n  }\n}",
+        "url": "http://10.224.154.206/rescan",
+        "body": "{\n  \"run_id\": \"{{run_id}}\",\n  \"articles\": {{articles}},\n  \"products\": {{products}}\n}",
         "method": "POST",
         "params": {},
         "headers": {
-          "X-API-Key": "dg2fjgthISORePJ3cYtiws9RcCvsGlyEWLshikBr1gc",
+          "X-API-Key": "stpTeSywdupakynD7rz5d0JWL9QsUqds",
           "Content-Type": "application/json"
         },
         "timeout": 120,
@@ -161,12 +161,12 @@
         }
       ],
       "url_config": {
-        "url": "https://website-diagnosis-amhp.onrender.com/api/analyze",
+        "url": "http://10.224.154.206/analyze",
         "body": "{\n  \"run_id\": \"{{run_id}}\",\n  \"url\": \"{{url}}\"\n}",
         "method": "POST",
         "params": {},
         "headers": {
-          "X-API-Key": "dg2fjgthISORePJ3cYtiws9RcCvsGlyEWLshikBr1gc",
+          "X-API-Key": "stpTeSywdupakynD7rz5d0JWL9QsUqds",
           "Content-Type": "application/json"
         },
         "timeout": 120,
@@ -178,7 +178,7 @@
     {
       "tool_name": "渲染报告",
       "tool_name_en": "site_render",
-      "description": "渲染中文 HTML 诊断报告并落盘服务端 results/，返回 report_url（在线报告）、html（报告 HTML 全文）与 md_url（执行清单 Markdown 在线链接）。scores 可缺省，缺省走确定性兜底；plan_md 为执行清单 Markdown 字符串，传了则 md_url 指向清单。",
+      "description": "渲染中文 HTML 诊断报告并落盘服务端 results/，返回 report_url（在线报告）、html（报告 HTML 全文）与 md_url（执行清单 Markdown 在线链接）。**四个入参全部必填**：没有评分时 scores 传 \"{}\"（不能漏传）；plan_md 为执行清单 Markdown 字符串，传了则 md_url 指向清单。",
       "tool_type": 1,
       "input_params": [
         {
@@ -207,12 +207,12 @@
         }
       ],
       "url_config": {
-        "url": "https://website-diagnosis-amhp.onrender.com/api/render",
+        "url": "http://10.224.154.206/render",
         "body": "{\n  \"run_id\": \"{{run_id}}\",\n  \"url\": \"{{url}}\",\n  \"scores\": \"{{scores}}\",\n  \"plan_md\": \"{{plan_md}}\"\n}",
         "method": "POST",
         "params": {},
         "headers": {
-          "X-API-Key": "dg2fjgthISORePJ3cYtiws9RcCvsGlyEWLshikBr1gc",
+          "X-API-Key": "stpTeSywdupakynD7rz5d0JWL9QsUqds",
           "Content-Type": "text/plain"
         },
         "timeout": 120,

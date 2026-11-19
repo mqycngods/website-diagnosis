@@ -127,7 +127,10 @@ def build_client_report_data(
     label = diagnostics.get("label", "")
     label_zh = diagnostics.get("label_zh", "")
     components = diagnostics.get("components", [])
-    findings = diagnostics.get("findings", [])
+    # 行动清单 / 页面建议 / roadmap / Top 优先级只消费 agent 来源的 findings。
+    # analyzer 补充发现（source="analyzer"）由 render 层单列在附录，不进行动清单，
+    # 否则报告会多出执行清单里没有的条目（两份产物同源是硬要求）。
+    findings = diagnostics.get("action_findings") or diagnostics.get("findings", [])
     quick_wins = diagnostics.get("quick_wins", [])
     medium_term = diagnostics.get("medium_term", [])
     strategic = diagnostics.get("strategic", [])
@@ -885,7 +888,15 @@ def _derive_schema_page_recs(schema: dict, fetch: dict, url: str = "") -> list[P
 
 
 def _derive_citability_page_recs(citability: dict) -> list[PageRecommendation]:
-    """基于可引用性数据推导页面建议"""
+    """基于可引用性数据推导页面建议。
+
+    采集失败（WAF 挑战页等）时 citability 是 {"error": ...}，不能据此判
+    「可引用性不足（均分 0）」——那是把「没测到」当成「测了得 0 分」，
+    与报告同页的「未测量」提示自相矛盾（2026-11 修）。
+    """
+    if not isinstance(citability, dict) or citability.get("error") \
+            or not citability:
+        return []
     recs = []
 
     avg_score = citability.get("average_citability_score", 0)

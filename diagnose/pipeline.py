@@ -87,7 +87,37 @@ def fetch_core(url: str) -> dict:
 
 # ── 工具 2：爬虫实测 + 可引用性 ─────────────────────────────
 
-def probe_bots(url: str) -> dict:
+def _apply_robots_cap(bots: dict, robots: dict) -> dict:
+    """声明层 vs 实测层一致性约束：robots.txt 全禁时，实测可达性不得满分。
+
+    背景：robots.txt 是「合同」，UA 重放是「现状」。OpenAI/Anthropic 的爬虫
+    当前可能忽略 robots 继续抓（实测 200），但政策随时收紧——声明全禁
+    意味着「配置意图就是不让爬」，与实测满分矛盾。封顶 60 分，报告里
+    才不会同时出现「P0 阻塞」与「可达性满分」。
+    封顶时在 bots 里写入人类可读原因，供模板与平台 agent 引用。
+    """
+    if not isinstance(bots, dict) or not isinstance(robots, dict):
+        return bots
+    if not robots.get("exists"):
+        return bots
+    status_map = robots.get("ai_crawler_status") or {}
+    blocked_names = [n for n, s in status_map.items()
+                     if s in ("BLOCKED", "BLOCKED_BY_WILDCARD")]
+    if blocked_names:
+        score = bots.get("overall_score")
+        if isinstance(score, int) and score > 60:
+            bots["overall_score"] = 60
+            bots["robots_cap_applied"] = True
+            bots["robots_cap_reason"] = (
+                f"robots.txt 对 {len(blocked_names)} 个爬虫声明全禁"
+                f"（{'、'.join(blocked_names[:4])}{' 等' if len(blocked_names) > 4 else ''}）。"
+                "UA 重放实测虽全部可达，但配置意图与现状矛盾——爬虫当前忽略 robots 继续抓，"
+                "一旦其政策收紧，可达性将即刻归零。实测分由 100 封顶至 60，"
+                "修复 robots.txt 后自动恢复。")
+    return bots
+
+
+def probe_bots(url: str, robots: dict = None) -> dict:
     """12 个 AI 爬虫 UA 重放 + 段落可引用性评分。
 
     返回：{bots, citability}
@@ -101,7 +131,8 @@ def probe_bots(url: str) -> dict:
         f_bots = pool.submit(_safe(bots_mod.probe_bots, "爬虫实测"), url,
                              delay=float(cfg("crawler.polite_delay", 1)))
         f_cit = pool.submit(_safe(cit_mod.score_citability, "可引用性评分"), url)
-        return {"bots": f_bots.result(), "citability": f_cit.result()}
+        bots = _apply_robots_cap(f_bots.result(), robots)
+        return {"bots": bots, "citability": f_cit.result()}
 
 
 # ── 工具 3：页面扫描（抽样 + 功能页 + schema） ───────────────
@@ -130,9 +161,52 @@ def scan_pages(url: str, fetch_page: dict) -> dict:
             internal_links, limit=cfg("crawler.sample_articles", 5))
         product_urls = sampling.pick_product_urls(
             internal_links, limit=cfg("crawler.sample_products", 3))
+
+        # 列表页展开：SPA 站点（如 React SPA）首页服务端 HTML 只有导航级
+        # 列表页链接（/blog、/insights），详情页由 JS 渲染、不在 internal_links
+        # 里。此时 pick_article_urls 必然为空，平台 LLM 拿到空候选只能把列表页
+        # 当文章回传（rescan 抓到的是列表页 → 无日期 → 误判「全站无机器可读
+        # 日期」）。先把列表页抓一层，把它内部的详情页链接并入候选。
+        list_expanded = []
+        if not article_urls and cfg("crawler.expand_list_pages", True):
+            list_pages = sampling.pick_list_pages(
+                internal_links, limit=cfg("crawler.list_page_limit", 3))
+            if list_pages:
+                list_expanded = _expand_list_pages(list_pages, delay)
+                merged = internal_links + list_expanded
+                article_urls = sampling.pick_article_urls(
+                    merged, limit=cfg("crawler.sample_articles", 5))
+
+        # sitemap 兜底：若 internal_links 与列表页展开都没给出内容详情页
+        # （首页导航只露出产品/功能页，内容藏在 /guides 下未链——pockella.com
+        # 案例：/guides 仅在 sitemap.xml 出现，46 条 internal_links 无一条指向
+        # 它），直接解析 sitemap 作为兜底候选源。优先在「首页内链 + sitemap URL」
+        # 上跑 pick_article_urls（内容详情页通常都在 sitemap 里），不渲染抓取
+        # 列表页，省一次 HTTP。
+        if not article_urls and cfg("crawler.sitemap_fallback", True):
+            from . import sitemap as _sitemap_mod
+            sm_urls = _sitemap_mod.discover_sitemaps(
+                url, limit=int(cfg("crawler.sitemap_limit", 200)))
+            if sm_urls:
+                sm_links = [{"url": u, "text": ""} for u in sm_urls]
+                article_urls = sampling.pick_article_urls(
+                    internal_links + list_expanded + sm_links,
+                    limit=cfg("crawler.sample_articles", 5))
+                if article_urls:
+                    list_expanded = list_expanded or []
+                    # 把 sitemap 候选也透给 agent：它从 internal_links 挑 URL
+                    # 时能看到内容详情页，避免「从 internal_links 挑不到文章」
+                    # 时只回传产品页/功能页。
+                    list_expanded = list_expanded + sm_links
+
         articles = {"sampled": article_urls, "sampled_products": product_urls,
                     "pages": [], "product_pages": [],
                     "pending_agent_pick": True, "internal_links": internal_links}
+        if list_expanded:
+            # 展开结果必须回传给平台 LLM：它只能从 internal_links 里挑 URL，
+            # 若不合并，agent 看到的仍是只有列表页的两条导航链接。
+            articles["internal_links"] = internal_links + list_expanded
+            articles["list_pages_expanded"] = True
         if article_urls or product_urls:
             _fetch_urls_into(articles, article_urls, product_urls, delay)
     except Exception as e:
@@ -196,6 +270,15 @@ def rescan_pages(agent_picks: dict, fetch_page: dict) -> dict:
     article_urls = [u for u in agent_picks.get("articles") or [] if isinstance(u, str)]
     product_urls = [u for u in agent_picks.get("products") or [] if isinstance(u, str)]
 
+    # 上限截断（提示词要求 3–5 篇 / 2–3 个）：串行抓取 × polite_delay 会撑爆
+    # 工具 120s 超时，超量时静默截断并在响应里回显实际采样数。
+    max_articles = int(cfg("crawler.sample_articles", 5))
+    max_products = int(cfg("crawler.sample_products", 3))
+    dropped = {"articles": max(0, len(article_urls) - max_articles),
+               "products": max(0, len(product_urls) - max_products)}
+    article_urls = article_urls[:max_articles]
+    product_urls = product_urls[:max_products]
+
     articles = {"sampled": article_urls, "sampled_products": product_urls,
                 "pages": [], "product_pages": []}
     _fetch_urls_into(articles, article_urls, product_urls, delay)
@@ -205,7 +288,49 @@ def rescan_pages(agent_picks: dict, fetch_page: dict) -> dict:
     except Exception as e:
         schema = _err(f"schema 重建失败：{e}")
 
-    return {"articles": articles, "schema": schema}
+    return {"articles": articles, "schema": schema,
+            # 供上游核对：picks 超过上限时告知实际采样数与丢弃数
+            "truncated": {k: v for k, v in dropped.items() if v} or None}
+
+
+def _expand_list_pages(list_pages: list, delay: float) -> list:
+    """抓取栏目列表页，提取其中的详情页链接（供 agent 挑选）。
+
+    SPA 站点首页 internal_links 只有导航链接时，详情页 URL 只存在于列表页的
+    服务端 HTML 中。这里抓一层列表页、收集其 internal_links，返回形如
+    首页 internal_links 的 [{url, text}] 列表。
+
+    失败不阻断：某列表页抓取失败只跳过它；全部失败返回空列表（调用方按
+    「没有可展开的候选」处理，退回原行为）。
+    """
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _grab(u: str) -> dict:
+        try:
+            return {"url": u, "page": fetch_mod.fetch_page(u)}
+        except Exception as e:
+            return {"url": u, "page": _err(f"列表页抓取失败：{e}")}
+
+    # 列表页数量少（默认 ≤3），并发抓取不必加锁限速
+    results = []
+    with ThreadPoolExecutor(max_workers=min(3, len(list_pages))) as pool:
+        futures = [pool.submit(_grab, u) for u in list_pages]
+        for fut in as_completed(futures):
+            results.append(fut.result())
+
+    merged, seen = [], set()
+    for r in results:
+        page = r.get("page") or {}
+        if not isinstance(page, dict) or page.get("error") or not page:
+            continue
+        for link in page.get("internal_links") or []:
+            url = link.get("url") if isinstance(link, dict) else str(link)
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            merged.append(link if isinstance(link, dict) else {"url": url, "text": ""})
+    return merged
 
 
 def _fetch_urls_into(articles: dict, article_urls: list, product_urls: list, delay: float):
@@ -262,7 +387,7 @@ def _fetch_urls_into(articles: dict, article_urls: list, product_urls: list, del
 
 def analyze(fetch_page: dict, articles: dict, pages_audit: dict,
             schema: dict, citability: dict = None, bots: dict = None,
-            technical: dict = None, url: str = "") -> dict:
+            technical: dict = None, url: str = "", robots: dict = None) -> dict:
     """signals 提取 + analyzers 规则引擎 + 品牌实体 + 确定性 baseline。
 
     所有输入来自前面工具的平台变量。返回紧凑结果：
@@ -302,7 +427,7 @@ def analyze(fetch_page: dict, articles: dict, pages_audit: dict,
         from .blockers import compute_p0_blockers
         out["p0_blockers"] = compute_p0_blockers(
             fetch=fetch_page, bots=bots or {}, schema=schema,
-            issues=issues, articles=articles)
+            issues=issues, articles=articles, robots=robots)
     except Exception as e:
         out["p0_blockers"] = _err(f"阻塞判定失败：{e}")
 
@@ -385,7 +510,8 @@ def fetch_all(url: str, soft_timeout: float = 25.0) -> dict:
 
     # 阶段 2：probe_bots 与 scan_pages 并发，等待剩余时间
     with ThreadPoolExecutor(max_workers=2) as pool:
-        f_probe = pool.submit(_safe(probe_bots, "爬虫/可引用性"), url)
+        f_probe = pool.submit(_safe(probe_bots, "爬虫/可引用性"), url,
+                              core.get("robots", {}))
         f_scan = pool.submit(_safe(scan_pages, "页面扫描"), url, core.get("fetch", {}))
 
         done, not_done = {}, {}

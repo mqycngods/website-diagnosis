@@ -3,7 +3,9 @@
   {{ m.sub_head("问题技术证据", "全部 Findings 的完整证据、修复建议与代码示例。从行动清单点击行可跳转至此。", none, none) }}
 
   {% if report.findings %}
-    {% for f in report.findings %}
+    {% set agent_findings = report.findings | rejectattr("source", "equalto", "analyzer") | list %}
+    {% set extra_findings = report.findings | selectattr("source", "equalto", "analyzer") | list %}
+    {% for f in agent_findings %}
     {% set entry_id = "%02d" % loop.index %}
     <details class="finding-fold sev-{{ f.severity }}" id="appendix-{{ entry_id }}">
       <summary class="finding-fold-summary">
@@ -47,6 +49,24 @@
       </div>
     </details>
     {% endfor %}
+
+    {# 服务端分析器补充发现：不进行动清单、不占用 #NN 编号，避免与 agent
+       产出的执行清单对不上（两份产物同源是硬要求）。仅作技术证据展示。 #}
+    {% if extra_findings %}
+    <div class="extra-findings">
+      <h4 class="extra-findings-title">服务端补充发现（{{ extra_findings | length }} 项）</h4>
+      <p class="extra-findings-hint">以下由确定性分析器在采集数据上直接检出，未出现在行动清单中；如需纳入执行计划，请以人工判断确认优先级。</p>
+      <ul class="extra-findings-list">
+        {% for f in extra_findings %}
+        <li>
+          <span class="sev status {{ 'bad' if f.severity == 'Critical' else 'warn' if f.severity in ('High','Medium') else 'good' }}">{{ f.severity_zh or f.severity }}</span>
+          <strong>{{ f.title }}</strong>
+          {% if f.evidence %}<span class="extra-findings-evidence"> — {{ f.evidence | autolink | safe }}</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
   {% else %}
     <div class="chart-fallback"><b>无 Findings</b> — 未检测到问题，或 agent 尚未提供 scores.json</div>
   {% endif %}

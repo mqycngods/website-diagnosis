@@ -22,7 +22,7 @@
   {% endif %}
   <div class="chart-grid">
     <div class="chart-card">
-      <header><h3>覆盖概览 <span class="hint-icon" data-hint="统计 GEO 关键 Schema 类型（Organization / WebSite / LocalBusiness / Article / Product / FAQPage / BreadcrumbList / Person / Service）在已抓取页面中的覆盖情况。已具备 = 检测到该类型 JSON-LD；缺失 = 已抓宿主页但未检测到；未采样 = 宿主页未被抓取，无法判定。">!</span></h3></header>
+      <header><h3>覆盖概览 <span class="hint-icon" data-hint="统计 GEO 关键 Schema 类型（Organization / WebSite / LocalBusiness / Article / Product / FAQPage / BreadcrumbList / Person / Service）在已抓取页面中的覆盖情况。已具备 = 检测到该类型 JSON-LD；缺失 = 已抓宿主页但未检测到；未采样 = 宿主页未被抓取，无法判定。" role="img" aria-label="说明">?</span></h3></header>
       <div class="pad" style="text-align:center">
         <p style="margin:0 0 4px;font-size:12px;color:var(--muted)">{{ sch.total_blocks }} 个 JSON-LD 块 · {{ sch.types_found | length }} 种类型</p>
         <p style="margin:0 0 12px;font-size:12px;color:var(--muted)">采样：首页{% if sampled.article_pages %} + {{ sampled.article_pages }} 文章页{% endif %}{% if sampled.product_pages %} + {{ sampled.product_pages }} 产品页{% else %}（未含产品页）{% endif %}</p>
@@ -55,7 +55,7 @@
       </div>
     </div>
     <div class="chart-card">
-      <header><h3>sameAs 实体链接 <span class="hint-icon" data-hint="从所有 JSON-LD 块中提取 sameAs 属性的 URL 数量。sameAs 是 Organization / Person schema 中声明「这个实体也在这些平台存在」的链接（如 Wikipedia、LinkedIn、Crunchbase），是 GEO 中最有影响力的单一属性——帮助 AI 引擎把网站与知识图谱中的实体绑定，消除品牌歧义。">!</span></h3></header>
+      <header><h3>sameAs 实体链接 <span class="hint-icon" data-hint="从所有 JSON-LD 块中提取 sameAs 属性的 URL 数量。sameAs 是 Organization / Person schema 中声明「这个实体也在这些平台存在」的链接（如 Wikipedia、LinkedIn、Crunchbase），是 GEO 中最有影响力的单一属性——帮助 AI 引擎把网站与知识图谱中的实体绑定，消除品牌歧义。" role="img" aria-label="说明">?</span></h3></header>
       <div class="pad" style="text-align:center">
         <p style="margin:0 0 4px;font-size:12px;color:var(--muted)">GEO 最有影响力的单一属性</p>
         <p style="margin:0 0 12px;font-size:12px;color:var(--muted)">链接站外权威资料，帮助 AI 确认品牌实体</p>

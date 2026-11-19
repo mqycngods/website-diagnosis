@@ -32,6 +32,25 @@ WEIGHTS = _load_weights()
 SCORE_LABELS = ("Excellent", "Good", "Fair", "Poor", "Critical")
 
 
+def _safe_score(raw) -> "int | None":
+    """agent 给的分数容错解析：接受 85 / "85" / "85/100" / "85 分"，非法返回 None。
+
+    agent 输出脏形状（"85/100"、"八十"）在旧实现里直接 int() 抛异常，整份报告
+    会被降级成空壳。这里降级成「该维度不用 agent 分、回落确定性基线」。
+    """
+    if raw is None or isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        v = int(raw)
+    else:
+        import re as _re
+        m = _re.search(r"-?\d+(?:\.\d+)?", str(raw))
+        if not m:
+            return None
+        v = int(float(m.group(0)))
+    return max(0, min(100, v))
+
+
 def score_label(score: int) -> str:
     return ("Excellent" if score >= 90 else "Good" if score >= 75 else
             "Fair" if score >= 60 else "Poor" if score >= 40 else "Critical")
@@ -88,19 +107,36 @@ class ScoreEngine:
             raw_dims = agent_scores.get("dimensions") or {}
             # 兼容 list 结构：Agent 常把 dimensions 写成 [{"name": "可引用性", ...}]
             if isinstance(raw_dims, list):
-                name_map = {
+                # 别名表必须覆盖 DIM_NAMES 的现名 + 常见旧名/同义写法。
+                # 旧表漏了「爬虫可达性」「品牌识别与 Schema」（正是现名）且
+                # 仍留着已改名的 "ai_access"，导致 agent 用 list 形式时
+                # 这两维被静默丢弃、回落到 baseline。
+                name_map = {}
+                for _key, (_zh, _w) in self.weights.items():
+                    name_map[_zh] = _key          # 现名，来自 config
+                name_map.update({
                     "可引用性": "citability",
-                    "AI 可达性": "ai_access",
+                    "内容引用度": "citability",
+                    "AI 可达性": "platform",       # 旧名 → 现 key
+                    "爬虫可达性": "platform",
+                    "平台就绪": "platform",
                     "技术基础": "technical",
                     "结构化数据": "schema",
+                    "品牌识别与 Schema": "schema",
+                    "品牌识别": "schema",
                     "内容质量": "content",
-                }
+                })
+                unmatched = []
                 for item in raw_dims:
                     if isinstance(item, dict):
-                        zh_name = item.get("name", "")
+                        zh_name = (item.get("name") or "").strip()
                         en_key = name_map.get(zh_name)
                         if en_key:
                             dims[en_key] = item
+                        elif zh_name:
+                            unmatched.append(zh_name)
+                if unmatched:
+                    print(f"[score] ⚠️ 未识别的维度名（已忽略）：{unmatched}", file=__import__("sys").stderr)
             elif isinstance(raw_dims, dict):
                 dims = raw_dims
 
@@ -110,8 +146,9 @@ class ScoreEngine:
             card = ScoreCard(key=key, name=name, weight=weight,
                              baseline_score=baseline)
             d = dims.get(key)
-            if isinstance(d, dict) and d.get("score") is not None:
-                card.score = int(d["score"])
+            agent_score = _safe_score(d.get("score")) if isinstance(d, dict) else None
+            if isinstance(d, dict) and agent_score is not None:
+                card.score = agent_score
                 card.note = d.get("note") or ""
                 card.source = "agent"
                 card.measured = True

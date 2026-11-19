@@ -339,7 +339,8 @@ def build_report_from_dict(data: dict, domain: str, url: str,
         try:
             from diagnose.blockers import compute_p0_blockers
             blockers = compute_p0_blockers(
-                fetch=fetch, bots=bots, schema=schema, issues=issues, articles=articles)
+                fetch=fetch, bots=bots, schema=schema, issues=issues,
+                articles=articles, robots=data.get("robots"))
         except Exception as e:  # 判定失败不阻断渲染，退回 findings 口径
             print(f"[build] ⚠️ P0 阻塞判定失败：{e}", file=sys.stderr)
             blockers = []
@@ -362,29 +363,50 @@ def build_report_from_dict(data: dict, domain: str, url: str,
     from diagnose.blockers import cap_severity_p0 as _cap_p0
 
     def _finding_kind(f: dict) -> str:
-        """从 finding 标题推断 issue kind（agent 写的 finding 没有 kind 字段）。"""
+        """把 finding 映射到 blocker key，用于与 compute_p0_blockers 的结果对账。
+
+        这里只做「映射」，不做「放行判定」：最终能否保留 Critical 由
+        cap_severity_p0(..., blockers) 对照实际命中的 blocker key 决定，
+        所以标题误猜、agent 自报 kind 都不会再制造横幅/清单矛盾。
+        """
         t = (f.get("title") or "").lower()
         if "sameas" in t:
             return "organization_no_sameas"
         if "作者署名" in t and ("冲突" in t or "不一致" in t):
             return "author_mismatch_template"
-        if re.search(r"无\s*ssr|服务端渲染|空壳|仅.*js", t):
+        if re.search(r"无\s*ssr|服务端渲染|空壳|仅.*js|依赖\s*js|js\s*渲染|客户端渲染|csr|javascript\s*渲染|服务端\s*返回|服务端\s*无\s*正文|正文\s*完全\s*依赖", t):
             return "no_ssr"
+        if "robots" in t and re.search(r"disallow|全站|全禁|全部|通配|所有爬虫|声明.*禁", t):
+            return "robots_disallow_all"
+        if re.search(r"爬虫|gptbot|claudebot|ai bot|机器人", t) and \
+                re.search(r"拦|禁|block|拒|403|disallow", t):
+            return "retrieval_bots_blocked"
+        if re.search(r"抓取失败|无法访问|不可达|连接超时|dns", t):
+            return "fetch_failed"
         if "structured_data" in t or "json-ld" in t or "结构化数据" in t:
             return "homepage_zero_jsonld"
         return ""
 
     # 1. agent 的 findings（权重最高）
+    # kind 优先级：blocker key 精确匹配 > agent 自报 kind > 标题映射。
+    # agent 自报 kind 只在其确实命中 blockers 时才有效（cap_severity_p0 负责）。
     agent_titles = set()
-    for f in (scores.get("findings", []) if _ok(scores) else []):
+    agent_findings_raw = scores.get("findings", []) if _ok(scores) else []
+    if not isinstance(agent_findings_raw, list):
+        agent_findings_raw = []
+    for f in agent_findings_raw:
+        if not isinstance(f, dict):
+            continue
         t = f.get("title", "")
         agent_titles.add(t)
+        kind = f.get("kind") or _finding_kind(f)
         findings.append(Finding(
             title=t, evidence=f.get("evidence", ""),
             impact=f.get("impact", ""), fix=f.get("fix", ""),
             confidence=f.get("confidence", "Confirmed"),
-            severity=_cap_p0(f.get("severity", "Medium"), f.get("kind") or _finding_kind(f)),
+            severity=_cap_p0(f.get("severity", "Medium"), kind, blockers),
             layer=f.get("layer", ""),
+            kind=kind,
         ))
 
     # 2. 通用分析器的 issues（去重：若 agent 已经写了同根因条目，跳过）
@@ -407,6 +429,10 @@ def build_report_from_dict(data: dict, domain: str, url: str,
         ("entity", r"organization|实体|@id"),
         ("schema", r"schema|json-?ld|结构化"),
         ("citability", r"可引用|citability"),
+        # 外部引用/权威来源：agent 写「全站零外部引用」、analyzer 写「主页未链向
+        # 任何权威外部平台」——同根因（缺第三方背书外链），此前无桶可归导致
+        # 判重失效、同一根因在主清单与补充发现里重复出现（2026-11-19）。
+        ("external_refs", r"外链|外部引用|第三方|权威|external|引用.*来源|来源.*引用|媒体|报道|背书"),
     ]
 
     def _concepts(text: str) -> set[str]:
@@ -431,27 +457,21 @@ def build_report_from_dict(data: dict, domain: str, url: str,
             return "neg"
         return None
 
-    agent_concepts = [(t, _concepts(t), _polarity(t)) for t in agent_titles]
-    analyzer_findings = _issues_to_findings(issues)
-    for af in analyzer_findings:
-        t = af.get("title", "")
-        p = _primary_concept(t)
-        pol = _polarity(t)
-        is_dup = bool(p) and any(
-            p in aconcepts and (pol is None or apol is None or pol == apol)
-            for _, aconcepts, apol in agent_concepts
-        )
-        if not is_dup:
-            findings.append(Finding(
-                title=t, evidence=af.get("evidence", ""),
-                impact=af.get("impact", ""), fix=af.get("fix", ""),
-                confidence=af.get("confidence", "Confirmed"),
-                severity=_cap_p0(af.get("severity", "Medium"), af.get("_kind", "")),
-                layer=af.get("layer", "page"),
-            ))
+    # 服务端补充发现已停用（2026-11-19）：analyzer 的确定性检测结果与 agent
+    # 的 findings 判重不稳，经常出现「同一根因换措辞」重复——概念级判重
+    # （_CONCEPTS/_polarity）对「全站无机器可读日期」vs「全站无任何机器可读
+    # 日期」这类只差一个词的标题都拦不住，导致附录同时出现 agent 写的条目
+    # 和 analyzer 补充项。analyzer 数据已通过 signals_summary / issues 字段
+    # 完整透出给 agent，由 agent 统一撰写即可；此循环不再把 analyzer 结果
+    # 注入 findings。
 
     if not findings:
-        findings = _fallback_findings(citability, bots, schema, fetch, brand)
+        # 兜底 findings 与 agent findings 走同一把 P0 尺子：否则「拦训练类
+        # 爬虫」会被硬编码成 Critical，在横幅写「可动工」时冒出 P0 卡。
+        # 即便没有 agent scores，blockers 也已在上方由实测数据算好。
+        findings = [f for f in _fallback_findings(citability, bots, schema, fetch, brand)]
+        for f in findings:
+            f.severity = _cap_p0(f.severity, _finding_kind({"title": f.title}), blockers)
 
     # 封闭词表中文伴生
     def fz(f: Finding):
@@ -467,9 +487,29 @@ def build_report_from_dict(data: dict, domain: str, url: str,
         a.owner_zh = ZH_OWNER.get(a.owner, a.owner)
         return a
 
-    quick = [az(Action(**a)) for a in (scores.get("quick_wins", []) if _ok(scores) else []) if isinstance(a, dict)]
-    medium = [az(Action(**a)) for a in (scores.get("medium_term", []) if _ok(scores) else []) if isinstance(a, dict)]
-    strat = [az(Action(**a)) for a in (scores.get("strategic", []) if _ok(scores) else []) if isinstance(a, dict)]
+    def _mk_actions(raw: list) -> list:
+        """把 agent 写的 action dict 转成 Action，未知键与非 dict 项逐条丢弃。
+
+        旧实现直接 Action(**a)：agent 多写一个键（如 title/priority）就抛
+        TypeError，整份报告降级成空壳——一条脏数据不该毁掉整份报告。
+        """
+        out = []
+        allowed = set(Action.__dataclass_fields__)
+        for a in raw or []:
+            if not isinstance(a, dict):
+                continue
+            clean = {k: v for k, v in a.items() if k in allowed}
+            if not str(clean.get("action") or "").strip():
+                continue
+            try:
+                out.append(az(Action(**clean)))
+            except TypeError:
+                continue
+        return out
+
+    quick = _mk_actions(scores.get("quick_wins", []) if _ok(scores) else [])
+    medium = _mk_actions(scores.get("medium_term", []) if _ok(scores) else [])
+    strat = _mk_actions(scores.get("strategic", []) if _ok(scores) else [])
 
     def _dedupe_actions(lists: list[list[Action]]) -> None:
         """跨数组按动作文本去重（就地）：LLM 常把同根因动作写进多个数组。
@@ -545,6 +585,9 @@ def build_report_from_dict(data: dict, domain: str, url: str,
         "label_zh": ZH_LABEL.get(label, label),
         "components": [asdict(c) for c in comp],
         "findings": [asdict(f) for f in findings],
+        # 行动清单只消费 agent 来源的 findings：analyzer 补充项已单列于附录，
+        # 若也进行动清单，报告会多出执行清单（agent 写的 md）里没有的条目。
+        "action_findings": [asdict(f) for f in findings if f.source != "analyzer"],
         "quick_wins": [asdict(a) for a in quick],
         "medium_term": [asdict(a) for a in medium],
         "strategic": [asdict(a) for a in strat],

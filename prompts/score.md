@@ -4,6 +4,21 @@
 **所有面向读者的文字（findings、actions、description、impact_estimate）一律用中文撰写。**
 枚举机器值（severity / confidence / layer / verdict / bot_class / status）**保留英文**——渲染层统一处理，不要翻译。
 
+## 封闭词表（硬性：只能从下列值中选，大小写与拼写必须逐字一致）
+
+渲染层用这些值做中文映射，写错一个字母就会在报告里显示成英文原文。
+
+| 字段 | 允许值 |
+|---|---|
+| `severity` | `Critical` / `High` / `Medium` / `Low` |
+| `confidence` | `Confirmed` / `Likely` / `Hypothesis` |
+| `layer` | `domain` / `template` / `editorial` / `page` |
+| action 的 `impact` | `High` / `Med` / `Low` ← **注意是 `Med` 不是 `Medium`** |
+| action 的 `effort` | `minutes` / `hours` / `days` / `weeks` |
+| action 的 `owner` | `developer` / `content` / `marketing` |
+
+`severity` 用 `Medium`，action 的 `impact` 用 `Med`——两者不是同一个字段，不要混用。
+
 ## 输出结构（scores.json）
 
 ```json
@@ -11,7 +26,6 @@
   "description": "一段中文核心判断（3-5 句），说明整体态势与最关键问题",
   "dimensions": {
     "citability": {"score": 0, "note": "中文一句话说明"},
-    "brand":      {"score": 0, "note": "..."},
     "content":    {"score": 0, "note": "..."},
     "technical":  {"score": 0, "note": "..."},
     "schema":     {"score": 0, "note": "..."},
@@ -19,7 +33,8 @@
   },
   "findings": [
     {"title": "中文标题", "evidence": "中文·引用实测数据", "impact": "中文·对大模型引用的影响",
-     "fix": "中文·可执行修复", "confidence": "Confirmed", "severity": "Critical", "layer": "domain"}
+     "fix": "中文·可执行修复", "confidence": "Confirmed", "severity": "Critical", "layer": "domain",
+     "kind": "对应 p0_blockers 的 key（仅该 finding 对齐某条 blocker 时必填，否则不写）"}
   ],
   "quick_wins":   [{"action": "中文", "impact": "High", "effort": "minutes", "owner": "developer", "platforms": "ChatGPT"}],
   "medium_term":  [{"action": "中文", "impact": "High", "effort": "days", "owner": "content", "platforms": ""}],
@@ -31,16 +46,21 @@
 
 **`paragraph_hints` 为可选**。脚本已从 breakdown 自动推导「哪一项最弱」（确定性），agent 的 hint 负责回答「**这段原文具体怎么改**」——必须引用段落里的真实短语给出替换方案，而不是复述通用模板。按 `heading` 字符串精确匹配（首尾空白会被 trim）。Citability 均分 <50 分时建议为 bottom 5 段落各写一条；其他段落可省略，渲染层会自动回退到脚本生成的通用提示。
 
-## 六维评分依据（0-100）
+## 五维评分依据（0-100）
+
+> 维度与权重以 `config/default.yaml` 为唯一来源（渲染引擎 `diagnose/scoring/engine.py` 读取）。
+> 历史上这里是六维（brand 20%），服务端已改为五维——品牌识别并入 schema 维度。
+> agent 若按六维输出 `brand` 维度，会被引擎静默丢弃，导致权重错位。
 
 | 维度 | 权重 | 数据来源 | 评分要点 |
 |---|---|---|---|
-| citability | 25% | citability.json | 直接用 `average_citability_score`；均分低看五维度哪项最弱 |
-| brand | 20% | schema.json(sameAs) + fetch.json | Organization 是否在 + sameAs 数量与质量（Wikipedia/Wikidata 权重最高） |
-| content | 20% | citability.json + fetch.json | E-E-A-T：作者署名、来源引用、数据密度、内容深度、新鲜度 |
-| technical | 15% | fetch.json + bots.json | SSR 是否完整（has_ssr_content）、安全头、HTTPS、可爬性 |
-| schema | 10% | schema.json | GEO 关键类型覆盖率、sameAs 完整性（仅对 Organization 强制）、有无 Person/Article |
-| platform | 10% | bots.json | 各 AI 平台爬虫实测可达性（检索类权重最高） |
+| citability | 31.25% | citability.json | 直接用 `average_citability_score`；均分低看五维度哪项最弱 |
+| content | 25% | citability.json + fetch.json | E-E-A-T：作者署名、来源引用、数据密度、内容深度、新鲜度 |
+| technical | 18.75% | fetch.json + bots.json | SSR 是否完整（has_ssr_content）、安全头、HTTPS、可爬性 |
+| schema | 12.5% | schema.json(sameAs) + fetch.json | 品牌识别与 Schema：Organization 是否在 + sameAs 数量与质量（Wikipedia/Wikidata 权重最高）+ 关键类型覆盖率 + Person/Article |
+| platform | 12.5% | bots.json | 各 AI 平台爬虫实测可达性（检索类权重最高） |
+
+**基线锚点（硬性）**：`site_analyze` 返回的 `baseline_scores` 是服务端对同样数据算出的确定性分。你的五维分若与某维基线偏离超过 **±15**，必须在 `note` 里说明偏离理由（实测证据支持）；没有理由的偏离会被视为评分失真。`citability` 维度直接取 `average_citability_score`，不得自行调整。
 
 ## Critical（P0）判定依据 — 五类 GEO 阻塞
 
@@ -54,7 +74,7 @@ Critical 只出自以下五类，逐层判断：
 AI 爬虫根本拿不到页面。任一成立即为 Critical：
 
 - **WAF / CDN 按 UA 拦截**：Cloudflare 托管挑战、防火墙规则拦掉 GPTBot / ClaudeBot / PerplexityBot / OAI-SearchBot。人肉打开完全正常、AI 侧 403，是最隐蔽的阻塞
-- **robots.txt 禁止检索类爬虫**：注意区分——禁 GPTBot / ClaudeBot（训练类）只是不参与训练；禁 **OAI-SearchBot / Claude-SearchBot / PerplexityBot**（检索类）才是真断供，站点在 ChatGPT Search 与 Perplexity 中彻底消失
+- **robots.txt 禁止检索类爬虫**：注意区分——禁 GPTBot / ClaudeBot（训练类）只是不参与训练；禁 **OAI-SearchBot / Claude-SearchBot / PerplexityBot**（检索类）才是真断供，站点在 ChatGPT Search 与 Perplexity 中彻底消失。**`Disallow: /` 全站通配禁止同属本类**：即使 UA 重放实测仍可达（爬虫当前忽略 robots 继续抓），配置意图与现状矛盾，爬虫政策一旦收紧即断供
 - **无 SSR / 预渲染**：服务端 HTML 是空壳，正文依赖 JS 生成。多数 AI 爬虫不执行 JS
 - **正文被墙遮挡**：登录墙、cookie 同意遮罩盖住正文、付费墙
 - **页面发现不了**：无 sitemap、sitemap 全 404 或过期、导航靠 JS 拼装、内链断，爬虫只能摸到首页
@@ -129,7 +149,7 @@ AI 的引用决策本质是一次**事实核验**。矛盾的数据比缺失的�
 
 1. 把候选问题列成草稿，每条标注「根因」（缺什么 / 错什么 / 多什么）
 2. **同根因必须合并**：若两条草稿的根因相同（例：「主页缺第三方外链」与「主页无权威引用」），必须合并为一条 finding，**不允许拆成两条不同 severity**。**高频重复示例**：「首页零结构化数据」与「首页缺 Organization schema」同根因（首页无 JSON-LD），必须合并为一条，如「首页无任何 JSON-LD（含 Organization），品牌官方声明页在机器侧空白」
-3. **跨维度同根因也必须合并（最常漏）**：同一件事换维度措辞再写一遍仍是重复。「首页零 JSON-LD」「品牌在官方声明页上没有任何结构化锚点」「主页缺 Organization schema（其他页面有）」三条同根因（首页无 JSON-LD / 无 Organization）→ 只留 1 条，用品牌实体措辞立卡，schema 检测数据写进 `evidence`。合并后该根因在整个 scores.json 中**只出现一次**——禁止在 brand 维度写一条、schema 维度再写一条；severity 取被并条目中的最高档
+3. **跨维度同根因也必须合并（最常漏）**：同一件事换维度措辞再写一遍仍是重复。「首页零 JSON-LD」「品牌在官方声明页上没有任何结构化锚点」「主页缺 Organization schema（其他页面有）」三条同根因（首页无 JSON-LD / 无 Organization）→ 只留 1 条，用品牌实体措辞立卡，schema 检测数据写进 `evidence`。合并后该根因在整个 scores.json 中**只出现一次**——禁止在 schema 维度写一条、platform 维度再写一条；severity 取被并条目中的最高档
 4. **现象与测量必须合并**：若两条草稿是同一根因的「现象」与「测量」（例：「citability 低」是现象，「具体数字=0」是测量），必须合并——把测量数据写进 `evidence` 字段，不要单独立一条
 5. **依赖链不拆**：若 B 是 A 的依赖（例：ItemList 依赖 Product schema），它们仍是两条独立 finding（修复动作不同），但 severity 应保持一致或 B ≤ A——**禁止** A 标 Critical 而 B 标 Low 这种「前置比后续还轻」的倒挂
 

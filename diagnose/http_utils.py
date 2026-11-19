@@ -12,13 +12,28 @@ import requests
 
 from .cache import CachedResponse
 
+# 基线抓取 UA：用于「取内容」，不是「测可达性」。
+#
+# 两类请求职责不同，UA 也必须分开：
+#   · 基线抓取（本文件 DEFAULT_HEADERS）：抓首页正文、JSON-LD、词数、可引用性。
+#     需要的是「能拿到真实页面」的身份——站点拦训练类爬虫时，用训练类 UA
+#     会拿到 403/裁剪页，正文、Schema、可引用性全部测不出来。
+#   · 爬虫可达性探测（diagnose/bots.py）：逐个显式传 12 个爬虫各自的 UA。
+#     这才是验证「AI 爬虫能不能访问」的检测，不受本文件 UA 影响。
+#
+# 历史问题（2026-11 修）：这里曾是 GPTBot/1.4，除了取不到内容，还污染了
+# 可达性检测本身——probe_bots 用基线 HTML 与各探针响应做相似度比对
+# （bots.py:98 _similarity），基线若是一张 403 页，所有放行该站点的爬虫
+# 都会与它比对失败而被误判 content_stripped。基线必须是「人类读者看到的
+# 正常页面」这个参照物。
 DEFAULT_HEADERS = {
     "User-Agent": (
-        "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; "
-        "GPTBot/1.4; +https://openai.com/gptbot)"
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 "
+        "(compatible; site-diagnosis/1.0)"
     ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
     "Accept-Encoding": "gzip, deflate",
 }
 

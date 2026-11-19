@@ -56,6 +56,39 @@ def pick_article_urls(internal_links, limit: int = 5) -> list:
         limit)
 
 
+# 列表页路径：/blog、/blogs、/news、/insights 这类「只有栏目段、无详情段」的路径。
+# 用途：SPA 站点首页的 internal_links 常只有导航级列表页，文章详情页由 JS 渲染
+# 而不在服务端 HTML 里——此时必须先把列表页展开一层，才能拿到详情页 URL。
+LIST_PATH = re.compile(
+    r"^/(blogs?|news|articles?|press|insights?|guides?|resources?|posts?)/?$", re.I)
+
+
+def pick_list_pages(internal_links, limit: int = 3) -> list:
+    """从内链中挑出「文章栏目列表页」，供 collect 展开一层拿到详情页。
+
+    只在首页没有可识别详情页时才有意义（调用方判断），返回去重后的列表页 URL。
+    """
+    seen, out = set(), []
+    for link in internal_links or []:
+        url = link.get("url") if isinstance(link, dict) else str(link)
+        if not url:
+            continue
+        p = urlparse(url)
+        if p.scheme not in ("http", "https"):
+            continue
+        path = p.path or "/"
+        if path.endswith(SKIP_EXT) or not LIST_PATH.search(path):
+            continue
+        clean = f"{p.scheme}://{p.netloc}{path.rstrip('/')}"
+        if clean in seen:
+            continue
+        seen.add(clean)
+        out.append(clean)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def pick_product_urls(internal_links, limit: int = 3) -> list:
     """产品页抽样 — Product schema 是产品级信号，首页/文章页通常不带。
 

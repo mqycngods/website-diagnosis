@@ -11,6 +11,9 @@ crawler:
   discovery_sitemap_limit: 200   # 功能页发现用的 sitemap 上限
   sample_articles: 5     # 文章页抽样数
   sample_products: 3     # 产品页抽样数
+  expand_list_pages: true  # 首页无可识别详情页时，先展开栏目列表页再挑
+  list_page_limit: 3     # 最多展开几个栏目列表页
+  sitemap_fallback: true  # 列表页展开仍无详情页时，解析 sitemap 兜底（SPA 首页导航不链内容页的场景）
   polite_delay: 1        # 逐页抓取的礼貌限速（秒）
 
 scoring:

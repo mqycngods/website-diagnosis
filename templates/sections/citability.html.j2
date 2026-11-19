@@ -6,7 +6,7 @@
        也应当作已测量，分数就是 0/100，比「未测量」更能传达「需要先建内容」。 #}
   {% set measured = cit and cit.get is defined and not cit.get("error") %}
   {% set n_blocks = cit.total_blocks_analyzed or (cit.all_blocks | length) %}
-  {{ m.sub_head("内容质量与引用度", "内容被 AI 系统直接引用、摘取的能力。确定性逐段评分，权重 25%。涵盖 citability / answerability / 内容质量 / 内容结构。",
+  {{ m.sub_head("内容质量与引用度", "内容被 AI 系统直接引用、摘取的能力。确定性逐段评分，权重 31.25%。涵盖 citability / answerability / 内容质量 / 内容结构。",
       (cit.average_citability_score | round | int | string + "/100") if measured else "未测量",
       m.tag_class(cit.average_citability_score | round | int) if measured else "none") }}
 

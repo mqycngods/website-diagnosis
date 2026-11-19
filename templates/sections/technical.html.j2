@@ -15,7 +15,7 @@
   {# bigflag 按最差子项着色：HTTPS 缺失 > 安全头全缺 > 全部正常 #}
   {% set worst_issue = "bad" if not tech.https else "bad" if (tech.headers_present or 0) == 0 else "warn" if (tech.headers_present or 0) < (tech.headers_total or 6) else "good" %}
   <div class="bigflag {{ worst_issue }}">
-    <h3>{% if tech.https %}✅ HTTPS 已启用{% else %}❌ 未启用 HTTPS{% endif %} · {% if (tech.headers_present or 0) == 0 %}❌ 安全响应头 {{ tech.headers_present }}/{{ tech.headers_total }} 全缺{% elif (tech.headers_present or 0) < (tech.headers_total or 6) %}⚠️ 安全头 {{ tech.headers_present }}/{{ tech.headers_total }} 已配置{% else %}✅ 安全头 {{ tech.headers_present }}/{{ tech.headers_total }} 已配置{% endif %} · 综合 {{ overall_score if overall_score is not none else tech.security_score }}/100</h3>
+    <h3>{% if tech.https %}<span class="dot ok" aria-hidden="true"></span> HTTPS 已启用{% else %}<span class="dot bad" aria-hidden="true"></span> 未启用 HTTPS{% endif %} · {% if (tech.headers_present or 0) == 0 %}<span class="dot bad" aria-hidden="true"></span> 安全响应头 {{ tech.headers_present }}/{{ tech.headers_total }} 全缺{% elif (tech.headers_present or 0) < (tech.headers_total or 6) %}<span class="dot warn" aria-hidden="true"></span> 安全头 {{ tech.headers_present }}/{{ tech.headers_total }} 已配置{% else %}<span class="dot ok" aria-hidden="true"></span> 安全头 {{ tech.headers_present }}/{{ tech.headers_total }} 已配置{% endif %} · 综合 {{ overall_score if overall_score is not none else tech.security_score }}/100</h3>
     {% if (tech.headers_present or 0) < (tech.headers_total or 6) %}<p style="margin:6px 0 0;font-size:12.5px;color:var(--ink-2)">安全头缺失项见下方矩阵，可在 Cloudflare Transform Rules 统一补齐。</p>{% endif %}
   </div>
 

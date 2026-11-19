@@ -181,7 +181,10 @@ def fetch_page(url: str, timeout: int = 30) -> dict:
             el.decompose()
         text = soup.get_text(separator=" ", strip=True)
         result["text_content"] = text
-        result["word_count"] = len(text.split())
+        # 中英文混合口径（中文按字符计）——直接 .split() 会让中文首页的
+        # word_count 恒为 1，薄内容判定与 ≥800 词类分析阈值对中文站全部失效。
+        from .text_metrics import word_count as _word_count
+        result["word_count"] = _word_count(text)
 
         base = urlparse(url).netloc
         for a in soup.find_all("a", href=True):
@@ -205,6 +208,14 @@ def fetch_page(url: str, timeout: int = 30) -> dict:
 
     except Exception as e:  # 网络/解析异常统一收容
         result["errors"].append(f"抓取失败：{e}")
+        # 顶层 error 是 P0 判定（diagnose/blockers.py compute_p0_blockers）读取
+        # 「抓取通道被切断」的唯一信号；只写 errors 列表会让 fetch_failed 永不
+        # 触发，报告出现「可进行 GEO 优化」+ 低分堪忧的自相矛盾（2026-11 修）。
+        result["error"] = f"抓取失败：{e}"
+    else:
+        # 非异常但完全没拿到响应（status_code 仍是 None）同样算抓取失败
+        if result.get("status_code") is None and result.get("errors"):
+            result["error"] = result["errors"][-1]
     return result
 
 

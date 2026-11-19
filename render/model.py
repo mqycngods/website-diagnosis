@@ -24,6 +24,14 @@ class Finding:
     layer: str = ""                    # domain | template | editorial | page
     code_example: str = ""             # 由对应 priority_action 注入（build.py）
     owner_zh: str = ""                 # 负责人中文（build.py 注入）
+    # 来源：agent（scores.json 写的）/ analyzer（服务端分析器补充）。
+    # analyzer 项只进附录「服务端补充发现」，不进行动清单与执行清单对齐范围，
+    # 否则报告会多出 agent 从未见过、清单里没有的条目（两份产物不同源）。
+    source: str = "agent"
+    # 对齐 p0_blockers 的机器可读 key（agent 从 site_analyze 返回的 blocker 复制）。
+    # 替代脆弱的标题正则映射：agent 自报 kind 命中 blocker 时直接用，
+    # 正则只做兜底（历史三次因措辞差异漏配导致 Critical 被误降）。
+    kind: str = ""
     # 中文伴生（渲染层填，机器 key 保留英文供 CSS/逻辑）
     severity_zh: str = ""
     confidence_zh: str = ""

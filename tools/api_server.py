@@ -26,8 +26,6 @@ results/ 落盘在 Render 免费档是临时的，重新部署会丢。
 from __future__ import annotations
 
 import ast
-import base64
-import binascii
 import json
 import os
 import re
@@ -142,39 +140,6 @@ def _parse_body(raw: bytes) -> dict:
     except Exception:
         pass
     return _loose_extract(text)
-
-
-def _maybe_b64(x: Any) -> Any:
-    """把 Base64 文本还原成原文，格式不合法则原样返回。
-
-    用于平台侧 Base64 传输：规避 Render 边缘 WAF 对请求体的「目录穿越」
-    误拦（实测 body 里出现 ../../etc/passwd 这类串会被 403，同样内容
-    Base64 后放行）。
-    """
-    if not isinstance(x, str) or not x.strip():
-        return x
-    try:
-        return base64.b64decode(x.strip(), validate=True).decode("utf-8", errors="replace")
-    except (binascii.Error, ValueError):
-        return x
-
-
-def _decoded(body: dict, key: str) -> Any:
-    """取字段值，按需 Base64 解码。
-
-    触发方式（任一声明成立即解码）：
-      - body["encoding"] == "base64"        （整包约定）
-      - body["<key>_encoding"] == "base64"  （逐字段约定）
-
-    只带 "encoding" 键而不带值的场景（模板未填变量）不解码——此时按原文处理，
-    与历史行为一致。解码不影响明文传参，向后兼容。
-    """
-    val = body.get(key)
-    flags = {str(body.get("encoding") or "").strip().lower(),
-             str(body.get(f"{key}_encoding") or "").strip().lower()}
-    if "base64" in flags:
-        return _maybe_b64(val)
-    return val
 
 
 def _as_json(x: Any) -> Any:
@@ -409,16 +374,83 @@ async def rescan(request: Request, _key: str = Depends(require_api_key)):
     else:
         stored = None
         fetch_page = _as_json(body.get("fetch_page")) or {}
+        # 无 run_id 时必须由调用方自带采集数据，否则 rescan 会在空输入上
+        # 「成功」返回空结果，上游无从察觉数据已丢失（2026-11 修）。
+        if not fetch_page:
+            raise HTTPException(
+                status_code=422,
+                detail="缺少有效 run_id，且未提供 fetch_page 采集数据；"
+                       "rescan 需要 collect 阶段的 run_id，或显式回传 fetch_page。")
 
-    agent_picks = _as_json(body.get("agent_picks")) or {}
-    result = await run_in_threadpool(pipeline.rescan_pages, agent_picks, fetch_page)
+    # agent_picks 接受两种形态（2026-11 统一）：
+    #   · 平铺 {articles:[...], products:[...]}     ← 工具声明的形态，推荐
+    #   · 嵌套 {agent_picks:{articles:[...], ...}}  ← 旧提示词形态，兼容保留
+    # 旧实现只读嵌套，而工具声明是平铺，agent 按声明传时 picks 恒为空，
+    # rescan 静默补抓 0 个 URL、上游无从察觉。
+    picks = _as_json(body.get("agent_picks"))
+    if not isinstance(picks, dict):
+        flat = {k: _as_json(body.get(k)) for k in ("articles", "products")}
+        picks = {k: v for k, v in flat.items() if v}
+    if not isinstance(picks, dict):
+        picks = {}
+
+    result = await run_in_threadpool(pipeline.rescan_pages, picks, fetch_page)
 
     if stored is not None:
-        stored["articles"] = result.get("articles") or stored.get("articles") or {}
+        # 增量合并而非全量覆盖：diagnose_run 阶段 collect 已自动抽样并抓取过
+        # 一批文章/产品页，agent 的 site_rescan 是在此基础上补挑。若直接覆盖，
+        # 服务端的采样结果会被丢弃——当站点首页不链向内容详情页（SPA 导航或
+        # 内容藏在 /guides 下而首页未链），agent 从 internal_links 挑不到文章
+        # 时 rescan 会返回空 articles，把 collect 阶段采到的样本清掉，后续
+        # freshness/blocker 计算在残缺样本上误判（pockella.com 案例：
+        # collect 抓到 /guides 带 2026-11-12 dateModified，agent 未补挑该 URL
+        # 却被 rescan 清空，导致「全站无机器可读日期」误报）。
+        prev = stored.get("articles") or {}
+        new_articles = result.get("articles") or {}
+        stored["articles"] = {
+            "sampled":          _merge_unique(prev.get("sampled", []), new_articles.get("sampled", [])),
+            "sampled_products": _merge_unique(prev.get("sampled_products", []), new_articles.get("sampled_products", [])),
+            "pages":            _merge_pages(prev.get("pages", []), new_articles.get("pages", [])),
+            "product_pages":    _merge_pages(prev.get("product_pages", []), new_articles.get("product_pages", [])),
+            "internal_links":   prev.get("internal_links", []),
+            "pending_agent_pick": False,
+        }
+        if prev.get("list_pages_expanded"):
+            stored["articles"]["list_pages_expanded"] = True
         stored["schema"] = result.get("schema") or stored.get("schema") or {}
+        # 补抓会改变 articles/schema，基于旧数据的 P0 判定随之失效——
+        # 必须清掉，让 render 用新数据重算（否则报告展示陈旧阻塞清单）。
+        stored.pop("p0_blockers", None)
         _store_put(run_id, stored)
         result["run_id"] = run_id
+        result["articles"] = stored["articles"]
     return result
+
+
+def _merge_unique(a: list, b: list) -> list:
+    """按 URL 去重合并两个列表（元素可以是字符串或含 url 字段的 dict）。"""
+    seen, out = set(), []
+    for x in list(a or []) + list(b or []):
+        key = x.get("url") if isinstance(x, dict) else x
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(x)
+    return out
+
+
+def _merge_pages(a: list, b: list) -> list:
+    """按 url 合并两个页面抓取结果列表，后到的非 error 结果覆盖先前的 error。"""
+    by_url: dict = {}
+    for p in list(a or []) + list(b or []):
+        if not isinstance(p, dict):
+            continue
+        u = p.get("url")
+        if not u:
+            continue
+        if u not in by_url or ("error" in by_url[u] and "error" not in p):
+            by_url[u] = p
+    return list(by_url.values())
 
 
 @app.post("/analyze")
@@ -442,6 +474,7 @@ async def analyze(request: Request, _key: str = Depends(require_api_key)):
         citability = stored.get("citability")
         bots = stored.get("bots")
         technical = stored.get("technical")
+        robots = stored.get("robots")
         url = body.get("url") or stored.get("url", "")
     else:
         fetch_page = _as_json(body.get("fetch_page")) or {}
@@ -451,7 +484,15 @@ async def analyze(request: Request, _key: str = Depends(require_api_key)):
         citability = _as_json(body.get("citability"))
         bots = _as_json(body.get("bots"))
         technical = _as_json(body.get("technical"))
+        robots = _as_json(body.get("robots"))
         url = body.get("url", "")
+        # 无 run_id 且没有任何采集数据 → 显式拒绝。否则会在全空输入上跑出
+        # 「0 分 + 全部未测量」的伪结果，上游以为分析成功（2026-11 修）。
+        if not any((fetch_page, articles, schema, citability, bots, technical)):
+            raise HTTPException(
+                status_code=422,
+                detail="缺少有效 run_id（可能已过期或服务重启），且未提供采集数据；"
+                       "请重新执行 collect 步骤获取新的 run_id。")
 
     result = await run_in_threadpool(
         pipeline.analyze,
@@ -463,6 +504,7 @@ async def analyze(request: Request, _key: str = Depends(require_api_key)):
         bots=bots,
         technical=technical,
         url=url,
+        robots=robots,
     )
 
     if run_id:
@@ -487,19 +529,23 @@ async def render(request: Request, _key: str = Depends(require_api_key)):
     plan_md 为 GEO 执行清单 Markdown：落盘为 <domain>-geo-plan.md，
     md_url 即该清单的在线链接；缺省时 md_url 为 None（不再落盘诊断报告 md）。
 
-    WAF 规避（可选）：body 里带 "encoding": "base64" 时，scores / plan_md
-    按 Base64（utf-8）解码后再用。Render 边缘 WAF 会对请求体做内容匹配，
-    正文里出现 "…/../etc/passwd" 这类目录穿越特征串时会被 403 拦掉
-    （响应是 text/html 拦截页，不是本服务的 JSON）。客户端若具备编码能力
-    可用该方式；不具备时按明文传参即可，行为完全一致。
 
     返回 {success, html, size, domain, url, filename, result_dir,
           report_path, report_url, md_path, md_url, is_fallback, error}。
     """
     body = _parse_body(await request.body())
     run_id = str(body.get("run_id") or "").strip()
-    scores = _as_json(_decoded(body, "scores")) or {}
-    plan_md = str(_decoded(body, "plan_md") or "")
+    raw_scores = body.get("scores")
+    scores = _as_json(raw_scores) or {}
+    # scores 解析失败必须回传：旧实现静默成 {} → 报告走确定性兜底、
+    # 评分与 agent 写的 findings 全部消失，而 success 仍是 true，
+    # 上游以为交付成功（2026-11 修）。
+    scores_parse_error = None
+    if str(raw_scores or "").strip() and not isinstance(scores, dict):
+        scores, scores_parse_error = {}, "scores 不是 JSON 对象"
+    elif str(raw_scores or "").strip() and not scores:
+        scores_parse_error = "scores 无法解析为 JSON（可能含尾逗号/未转义引号）"
+    plan_md = str(body.get("plan_md") or "")
     offline = bool(body.get("offline", False))
 
     if run_id:
@@ -535,6 +581,14 @@ async def render(request: Request, _key: str = Depends(require_api_key)):
             "issues": _as_json(body.get("issues")) or {},
             "p0_blockers": _as_json(body.get("p0_blockers")),
         }
+        # 无 run_id 又没有任何采集数据：只能渲染出「全部未测量」的空报告，
+        # 还带 success:true——上游会当成成功交付（2026-11 修）。
+        if not any(v for k, v in data.items()
+                   if k not in ("scores",)):
+            raise HTTPException(
+                status_code=422,
+                detail="缺少有效 run_id（可能已过期或服务重启），且未提供任何采集数据；"
+                       "请重新执行 collect → analyze 后再 render。")
 
     domain = str(body.get("domain") or "") or \
         urlparse(url).netloc.replace("www.", "").replace(":", "_") or "site"
@@ -582,6 +636,7 @@ async def render(request: Request, _key: str = Depends(require_api_key)):
             "md_url": f"{base}{prefix}/{saved['md_name']}" if saved["md_name"] else None,
             "is_fallback": False,
             "error": None,
+            "scores_parse_error": scores_parse_error,
         }
     except Exception as e:
         import traceback

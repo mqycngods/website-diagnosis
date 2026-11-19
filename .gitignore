@@ -3,6 +3,11 @@
 .netlify
 .DS_Store
 
+# Python 字节码缓存与测试产物
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
 # 部署环境变量（含真实 API Key），只提交 .env.example
 .env
 deploy/.env

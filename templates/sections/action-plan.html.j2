@@ -6,12 +6,16 @@
   三个同级 tab：按优先级 / 按页面 / 按时间
 #}
 <section class="section" id="action-plan">
+  {% set rec_titles = report.page_recommendations | map(attribute='issue') | list %}
+  {% set site_wide = report.priority_actions | selectattr('finding_index', 'equalto', -1)
+     | rejectattr('title', 'in', rec_titles) | list %}
+  {% set has_page_view = (report.page_recommendations | length > 0) or (site_wide | length > 0) %}
   <div class="sub-head">
-    <div class="sub-head-title-row"><h3>行动清单</h3><span class="hint-icon" data-hint="每个问题只列一次。点击行跳转到附录查看完整证据与修复建议。">!</span></div>
-    {% if report.priority_actions and report.page_recommendations %}
+    <div class="sub-head-title-row"><h3>行动清单</h3><span class="hint-icon" data-hint="每个问题只列一次。点击行跳转到附录查看完整证据与修复建议。" role="img" aria-label="说明">?</span></div>
+    {% if report.priority_actions and has_page_view %}
     <div class="action-tabs">
       <button class="action-tab active" data-view="priority">按优先级</button>
-      <button class="action-tab" data-view="page">按页面</button>
+      {% if has_page_view %}<button class="action-tab" data-view="page">按页面</button>{% endif %}
     </div>
     {% endif %}
   </div>
@@ -22,7 +26,6 @@
     </div>
   {% else %}
 
-  {% set has_page_view = report.page_recommendations | length > 0 %}
 
   {# ══════════ 视图 1：按优先级（紧凑清单，与按页面/按时间同风格） ══════════ #}
   <div class="action-view active" data-view="priority">
@@ -33,8 +36,49 @@
         ("P3", "P3 · 长期", "长期建设 · 持续投入"),
     ] %}
       {% set group = report.priority_actions | selectattr("priority", "equalto", tier) | list %}
-      {% if group %}
-      <div class="action-tier"{% if tier == "P0" %} id="p0-tier"{% endif %}>
+      {# P0 区块特殊处理：横幅的「查看 P0 清单」锚点必须始终存在，
+         即使 P0 桶为空（例如 finding 被 cap_severity_p0 降级）。
+         用空状态占位渲染，避免锚点失效。 #}
+      {% if tier == "P0" %}
+      <div class="action-tier" id="p0-tier">
+        <header class="action-tier-head">
+          <h4 class="action-tier-title">{{ tier_label }}</h4>
+          <small class="action-tier-hint">{{ tier_hint }}</small>
+        </header>
+        {% if group %}
+        <ul class="issue-ref-list">
+        {% for a in group %}
+          {% if a.finding_index >= 0 %}
+            {% set card_id = "%02d" % (a.finding_index + 1) %}
+          {% else %}
+            {% set card_id = "" %}
+          {% endif %}
+          <li class="issue-ref-item">
+            {% if card_id %}
+              <a href="#appendix-{{ card_id }}" class="issue-ref-id">#{{ card_id }}</a>
+              <span class="issue-ref-title">{{ a.title or a.action[:60] }}</span>
+              <a href="#appendix-{{ card_id }}" class="issue-ref-jump">→</a>
+            {% else %}
+              <details class="issue-ref-details">
+                <summary>
+                  <span class="issue-ref-badge">{{ a.effort_zh or a.effort }}</span>
+                  <span class="issue-ref-title">{{ a.title or a.action[:60] }}</span>
+                  <span class="issue-ref-expand-icon">▶</span>
+                </summary>
+                <p class="issue-ref-full">{{ a.action }}</p>
+              </details>
+            {% endif %}
+          </li>
+        {% endfor %}
+        </ul>
+        {% else %}
+        <div class="chart-fallback" style="margin:8px 0 0 0;padding:12px 16px">
+          当前清单中无 P0 级行动项（横幅与清单口径不一致时，以横幅判定为准——请检查 finding 的严重级别映射）。
+        </div>
+        {% endif %}
+      </div>
+      {% elif group %}
+      <div class="action-tier">
         <header class="action-tier-head">
           <h4 class="action-tier-title">{{ tier_label }}</h4>
           <small class="action-tier-hint">{{ tier_hint }}</small>
@@ -109,8 +153,28 @@
         </div>
       {% endif %}
     {% endfor %}
+
+    {# 全站通用：agent 写的 quick_wins/medium_term/strategic 中未被页面建议覆盖的执行项
+       （引擎派生项已在页面组内出现，按标题排除避免重复；site_wide/rec_titles 在 section 顶部已算） #}
+    {% if site_wide %}
+    <div class="view-group">
+      <h5 class="view-group-title">全站通用</h5>
+      <ul class="issue-ref-list">
+        {% for a in site_wide %}
+        <li class="issue-ref-item">
+          <span class="issue-ref-badge">{{ a.effort_zh or a.effort }}</span>
+          <span class="issue-ref-title">{{ a.title or a.action[:60] }}</span>
+          <span class="issue-ref-detail"> — {{ a.action }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
   </div>
   {% endif %}
+
+  {# 按时间（30/60/90 天 roadmap）视图 2026-11 撤销：报告只保留「按优先级 / 按页面」两个视图，
+     排期是执行清单 Markdown 的职责，避免两份产物重复且口径漂移。#}
 
   {% if report.impact_estimate %}
   <div class="verdict" style="margin-top:24px">

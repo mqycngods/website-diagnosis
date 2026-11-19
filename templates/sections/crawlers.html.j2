@@ -19,6 +19,12 @@
     </p>
   </div>
 
+  {% if bots.robots_cap_applied %}
+  <div class="chart-fallback" style="border-left:4px solid var(--red);background:var(--red-bg);margin-bottom:16px">
+    <b style="color:var(--red)">⚠️ 声明层与实测层矛盾：</b>{{ bots.robots_cap_reason }}
+  </div>
+  {% endif %}
+
   {% if n_blocked == 0 and n_payment == 0 %}
   {# 全绿时折叠明细：汇总卡替代 12 行全同的表格，点击可展开 #}
   <details class="code-fold" style="border:1px solid var(--line);border-radius:var(--r-md);background:var(--white);overflow:hidden">
