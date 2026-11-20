@@ -216,6 +216,14 @@ def fetch_page(url: str, timeout: int = 30) -> dict:
         # 非异常但完全没拿到响应（status_code 仍是 None）同样算抓取失败
         if result.get("status_code") is None and result.get("errors"):
             result["error"] = result["errors"][-1]
+        # status_code == 0 且无错误记录：curl 静默失败（SSL 证书错误 / DNS 解析
+        # 失败 / 连接被重置），fetch_failed 永不触发——补一条 error 让 P0 判定
+        # 能识别「抓取通道被切断」（hlatgd.com 案例：SSL 证书不匹配，curl 返回
+        # status_code=0、无错误文本、无正文，报告横幅却写「可进行 GEO 优化」）。
+        elif result.get("status_code") == 0 and not result.get("error") \
+                and not result.get("errors"):
+            result["error"] = "抓取失败：未获取有效响应（status_code=0），疑似 SSL 证书错误或连接被拦截"
+            result["errors"].append(result["error"])
     return result
 
 
