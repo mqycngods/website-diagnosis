@@ -14,7 +14,9 @@ crawler:
   expand_list_pages: true  # 首页无可识别详情页时，先展开栏目列表页再挑
   list_page_limit: 3     # 最多展开几个栏目列表页
   sitemap_fallback: true  # 列表页展开仍无详情页时，解析 sitemap 兜底（SPA 首页导航不链内容页的场景）
-  polite_delay: 1        # 逐页抓取的礼貌限速（秒）
+  polite_delay: 2        # 逐页抓取的礼貌限速（秒）。1s 对很多 Cloudflare 站点是
+                          # 速率限制阈值，偶发响应截断（word_count 从 1238 掉到 7-171）；
+                          # 提到 2s 后限流概率显著下降（2026-11 修）。
 
 scoring:
   # 五维权重（和为 1.0）。品牌实体维度已并入 schema 维度。

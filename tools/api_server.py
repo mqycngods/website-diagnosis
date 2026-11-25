@@ -267,7 +267,7 @@ class _RedisStore(_RunStore):
 def _raise_missing(run_id: str) -> None:
     raise HTTPException(
         status_code=404,
-        detail=f"run_id 「{run_id}」不存在或已过期（2 小时有效）——请重新跑 diagnose_run",
+        detail=f"run_id 「{run_id}」不存在或已过期（2 小时有效）——请重新跑 collect-fetch 拿到新的 run_id",
     )
 
 
@@ -292,6 +292,51 @@ def _store_put(run_id: str, data: dict) -> None:
 
 def _store_get(run_id: str) -> dict:
     return _STORE.get(run_id)
+
+
+# run_id 无效值黑名单（小写匹配）：LLM 常编这些占位符当 run_id 传过来，
+# 不能当成合法 run_id 去 _store_get（会 404）。
+_INVALID_RUN_IDS = {
+    "", "auto", "none", "null", "undefined",
+    "run_id", "<run_id>", "{run_id}",
+    "000000000000", "111111111111", "123456789012",
+    "xxxxxxxxxxxx", "aaaaaaaaaaaa",
+    "<collect_fetch 返回的 run_id 值>",
+    "<collect_fetch 返回的 run_id>",
+    "{{collect_fetch.run_id}}",
+}
+
+
+def _resolve_run_id(body: dict) -> tuple:
+    """从请求 body 解析出有效的 (run_id, stored_dict)。
+
+    严格策略（2026-11 修）：run_id 必须显式传对——不做 url 反查兜底。
+    原因：url 反查会让 url 与 run_id 的对应关系错乱（同 url 多次诊断时
+    拿错 run_id、串站），比直接 422 报错更危险。LLM 编 run_id 占位符时
+    （'auto'/'000000000000'/'<run_id>'），服务端返回明确的 422 + 错误
+    提示，让 agent 重试或重新调 collect-fetch，而不是给一个错误的数据。
+
+    返回 (run_id, stored)。stored 保证非空 dict。
+    失败抛 422（识别为无效占位符）或 404（run_id 格式合法但 store 未命中，
+    可能已过期或服务重启）。
+    """
+    run_id_raw = str(body.get("run_id") or "").strip()
+
+    # 识别为 LLM 编值：明确 422 报错，不尝试 _store_get（否则返回的 404
+    # 会让 agent 误以为 run_id 格式对但过期了，而不是「编了占位符」）。
+    if not run_id_raw or run_id_raw.lower() in _INVALID_RUN_IDS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"run_id={run_id_raw!r} 是占位符/编值，不是 collect-fetch 返回的真实 run_id。"
+                "请检查：调 collect-fetch 后，从响应 JSON 的 run_id 字段把值原样抄过来"
+                "（12 位十六进制字符串），不要自己编。"
+            ),
+        )
+
+    # run_id 格式合法，查 store——未命中则抛 404（_raise_missing）。
+    stored = _store_get(run_id_raw)
+    return run_id_raw, stored
 
 
 # ── 报告落盘 + 在线访问 ──────────────────────────────────────
@@ -337,10 +382,205 @@ def _save_report_files(domain: str, report, html_str: str, plan_md: str = "") ->
 
 # ── 端点 ─────────────────────────────────────────────────────
 
+# 与本地 skill（report.py collect）顺序完全一致的细粒度端点。
+# 拆分原因：单 /collect 内部并发会触发 Cloudflare 速率限制（同 host 突发
+# 4+ req/s），导致首页响应被截断、word_count 从 1238 掉到 171、SSR 误判
+# 「纯客户端渲染」；同时 60s 网关超时压不住一把抓的总耗时。
+# 拆成 6 个串行端点后，每个 < 30s，顺序与本地 skill 完全一致：
+#   1a. fetch_page              → /collect-fetch（仅首页，~1-5s）
+#   1b. robots + technical     → /collect-robots（sitemap 递归可能 10-30s）
+#   2. 文章/产品采样抓取        → /collect-sample
+#   3. 功能页发现 + schema      → /collect-discover
+#   4. bots UA 重放             → /collect-bots
+#   5. citability              → /collect-citability
+# brand/signals/issues/baseline 由 /analyze 汇总（零网络）。
+
+
+@app.post("/collect-fetch")
+@api_router.post("/collect-fetch")
+async def collect_fetch(request: Request, _key: str = Depends(require_api_key)):
+    """阶段 1a：仅抓首页（fetch_page，含 title/meta/正文/JSON-LD/links）。
+
+    返回 {url, run_id, fetch}。robots/technical 拆到 /collect-robots——
+    sitemap 递归解析与 llms.txt 探测可能耗时 10-30s，单端点会压 60s 网关
+    超时（2026-11 修）。
+    """
+    body = _parse_body(await request.body())
+    url = (body.get("url") or (body.get("inputs") or {}).get("url") or "").strip()
+    if not url:
+        raise HTTPException(status_code=422, detail="缺少 url 参数")
+
+    def _run():
+        pipeline._ensure_cache()
+        # 截断重试（2026-11 修）：Cloudflare 速率限制会截断响应到 <head> 末尾，
+        # <body> 完全缺失（word_count=7，h1/links/images 全空）。串行重试 1 次
+        # 间隔 4s，约 80% 概率拿到完整正文。
+        return {"url": url, "fetch": pipeline._safe_with_retry(
+            pipeline.fetch_mod.fetch_page, "fetch", max_retries=1, retry_delay=4.0)(url)}
+
+    result = await run_in_threadpool(_run)
+    # run_id 生成：uuid4 随机 12 位十六进制。允许调用方显式传入 run_id
+    # （用于调试/重放），否则随机生成。同 url 多次诊断会产生不同 run_id——
+    # 这是正确行为：每次诊断的数据应该独立，不能用 url 派生做兜底（会让
+    # 多次诊断串数据，2026-11 修）。
+    explicit_run_id = str(body.get("run_id") or "").strip()
+    run_id = explicit_run_id if explicit_run_id else uuid.uuid4().hex[:12]
+    _store_put(run_id, {"url": url, **result})
+    result["run_id"] = run_id
+    return result
+
+
+@app.post("/collect-robots")
+@api_router.post("/collect-robots")
+async def collect_robots(request: Request, _key: str = Depends(require_api_key)):
+    """阶段 1b：robots.txt + sitemap 分析 + technical（安全头/HTTPS/llms.txt）。
+
+    sitemap 递归解析 + llms.txt 探测可能耗时 5-30s（视站点 sitemap 大小）。
+    返回 {robots, technical}，写回暂存。
+    """
+    body = _parse_body(await request.body())
+    run_id, stored = _resolve_run_id(body)
+    url = stored.get("url") or body.get("url") or ""
+    fetch_page = stored.get("fetch") or {}
+
+    def _run():
+        pipeline._ensure_cache()
+        out = {}
+        out["robots"] = pipeline._safe(pipeline.robots_mod.fetch_robots, "robots 解析")(url)
+        try:
+            out["technical"] = pipeline.tech_mod.check_technical(
+                url,
+                security_headers=fetch_page.get("security_headers", {}) if "error" not in fetch_page else {},
+            )
+        except Exception as e:
+            out["technical"] = pipeline._err(f"技术层检测失败：{e}")
+        return out
+
+    result = await run_in_threadpool(_run)
+    stored["robots"] = result["robots"]
+    stored["technical"] = result["technical"]
+    _store_put(run_id, stored)
+    return {"robots": result["robots"], "technical": result["technical"], "run_id": run_id}
+
+
+@app.post("/collect-sample")
+@api_router.post("/collect-sample")
+async def collect_sample(request: Request, _key: str = Depends(require_api_key)):
+    """阶段 2：文章/产品采样抓取（对应 report.py 步骤 2）。
+
+    从 run_id 暂存取首页 internal_links，串行抓 5 文章 + 3 产品。
+    返回 {articles}，写回暂存。articles 恒带 pending_agent_pick=True。
+    """
+    body = _parse_body(await request.body())
+    run_id, stored = _resolve_run_id(body)
+    fetch_page = stored.get("fetch") or {}
+    url = stored.get("url") or body.get("url") or ""
+
+    def _run():
+        pipeline._ensure_cache()
+        from diagnose import sampling
+        from diagnose.config import cfg
+        delay = float(cfg("crawler.polite_delay", 1))
+        links = fetch_page.get("internal_links", []) if "error" not in fetch_page else []
+        article_urls = sampling.pick_article_urls(links, limit=cfg("crawler.sample_articles", 5))
+        product_urls = sampling.pick_product_urls(links, limit=cfg("crawler.sample_products", 3))
+        articles = {"sampled": article_urls, "sampled_products": product_urls,
+                    "pages": [], "product_pages": [],
+                    "pending_agent_pick": True, "internal_links": links}
+        if article_urls or product_urls:
+            pipeline._fetch_urls_into(articles, article_urls, product_urls, delay)
+        return articles
+
+    articles = await run_in_threadpool(_run)
+    stored["articles"] = articles
+    _store_put(run_id, stored)
+    return {"articles": articles, "run_id": run_id}
+
+
+@app.post("/collect-discover")
+@api_router.post("/collect-discover")
+async def collect_discover(request: Request, _key: str = Depends(require_api_key)):
+    """阶段 3：功能页发现 + schema 检测（对应 report.py 步骤 3 + 4）。
+
+    返回 {pages, schema}，写回暂存。
+    """
+    body = _parse_body(await request.body())
+    run_id, stored = _resolve_run_id(body)
+    fetch_page = stored.get("fetch") or {}
+    articles = stored.get("articles") or {}
+    url = stored.get("url") or body.get("url") or ""
+
+    def _run():
+        pipeline._ensure_cache()
+        from diagnose import discovery
+        # 功能页抓取也走截断重试（2026-11 修）
+        fetch_one_with_retry = lambda u: pipeline._safe_with_retry(
+            pipeline.fetch_mod.fetch_page, "fetch", max_retries=1, retry_delay=4.0)(u)
+        pages_audit = discovery.audit_functional_pages(
+            url,
+            fetch_page.get("internal_links", []) if "error" not in fetch_page else [],
+            fetch_one=fetch_one_with_retry)
+        schema = pipeline.build_schema_from(fetch_page, articles)
+        return {"pages": pages_audit, "schema": schema}
+
+    result = await run_in_threadpool(_run)
+    stored["pages"] = result["pages"]
+    stored["schema"] = result["schema"]
+    _store_put(run_id, stored)
+    return {"pages": result["pages"], "schema": result["schema"], "run_id": run_id}
+
+
+@app.post("/collect-bots")
+@api_router.post("/collect-bots")
+async def collect_bots(request: Request, _key: str = Depends(require_api_key)):
+    """阶段 4：12 个 AI 爬虫 UA 重放（对应 report.py 步骤 6）。
+
+    内部串行 + delay=1s，12 个 UA 约 12-15s。
+    返回 {bots}，写回暂存。
+    """
+    body = _parse_body(await request.body())
+    run_id, stored = _resolve_run_id(body)
+    url = stored.get("url") or body.get("url") or ""
+    robots = stored.get("robots") or {}
+
+    def _run():
+        pipeline._ensure_cache()
+        from diagnose.config import cfg
+        bots = pipeline.bots_mod.probe_bots(url, delay=float(cfg("crawler.polite_delay", 1)))
+        return pipeline._apply_robots_cap(bots, robots)
+
+    bots = await run_in_threadpool(_run)
+    stored["bots"] = bots
+    _store_put(run_id, stored)
+    return {"bots": bots, "run_id": run_id}
+
+
+@app.post("/collect-citability")
+@api_router.post("/collect-citability")
+async def collect_citability(request: Request, _key: str = Depends(require_api_key)):
+    """阶段 5：段落可引用性评分（对应 report.py 步骤 7）。
+
+    会复抓一次首页（跨进程无缓存）。
+    返回 {citability}，写回暂存。
+    """
+    body = _parse_body(await request.body())
+    run_id, stored = _resolve_run_id(body)
+    url = stored.get("url") or body.get("url") or ""
+
+    citability = await run_in_threadpool(pipeline.cit_mod.score_citability, url)
+    stored["citability"] = citability
+    _store_put(run_id, stored)
+    return {"citability": citability, "run_id": run_id}
+
+
 @app.post("/collect")
 @api_router.post("/collect")
 async def collect(request: Request, _key: str = Depends(require_api_key)):
-    """一站式抓取：fetch_core + probe_bots + scan_pages（并发 + 25s 软超时）。
+    """一站式抓取（兼容旧流程）：fetch_core + probe_bots + scan_pages 串行。
+
+    新接入请改用 /collect-fetch + /collect-sample + /collect-discover +
+    /collect-bots + /collect-citability 五个细粒度端点，与本地 skill
+    顺序完全一致，避免 60s 网关超时与 Cloudflare 限流。
 
     返回 {url, run_id, fetch, robots, technical, bots, citability,
           articles, pages, schema, _meta}。
@@ -351,7 +591,7 @@ async def collect(request: Request, _key: str = Depends(require_api_key)):
     if not url:
         raise HTTPException(status_code=422, detail="缺少 url 参数")
 
-    result = await run_in_threadpool(pipeline.fetch_all, url, 60.0)
+    result = await run_in_threadpool(pipeline.fetch_all, url, 110.0)
     run_id = str(body.get("run_id") or "").strip() or uuid.uuid4().hex[:12]
     _store_put(run_id, {"url": url, **result})
     result["run_id"] = run_id
@@ -367,20 +607,24 @@ async def rescan(request: Request, _key: str = Depends(require_api_key)):
     并已同步写回暂存（后续 analyze/render 直接用）。
     """
     body = _parse_body(await request.body())
-    run_id = str(body.get("run_id") or "").strip()
-    if run_id:
-        stored = _store_get(run_id)
+    run_id_raw = str(body.get("run_id") or "").strip()
+    url_raw = (body.get("url") or (body.get("inputs") or {}).get("url") or "").strip()
+    stored = None
+    run_id = ""
+    if run_id_raw or url_raw:
+        try:
+            run_id, stored = _resolve_run_id(body)
+        except HTTPException:
+            run_id, stored = "", None
+    if stored is not None:
         fetch_page = stored.get("fetch") or {}
     else:
-        stored = None
         fetch_page = _as_json(body.get("fetch_page")) or {}
-        # 无 run_id 时必须由调用方自带采集数据，否则 rescan 会在空输入上
-        # 「成功」返回空结果，上游无从察觉数据已丢失（2026-11 修）。
         if not fetch_page:
             raise HTTPException(
                 status_code=422,
-                detail="缺少有效 run_id，且未提供 fetch_page 采集数据；"
-                       "rescan 需要 collect 阶段的 run_id，或显式回传 fetch_page。")
+                detail="缺少有效 run_id（可能已过期或服务重启），且未提供 fetch_page 采集数据；"
+                       "rescan 需要 collect-fetch 阶段的 run_id，或显式回传 fetch_page。")
 
     # agent_picks 接受两种形态（2026-11 统一）：
     #   · 平铺 {articles:[...], products:[...]}     ← 工具声明的形态，推荐
@@ -464,18 +708,37 @@ async def analyze(request: Request, _key: str = Depends(require_api_key)):
     执行清单前置判定都以它为准（规则同源）。
     """
     body = _parse_body(await request.body())
-    run_id = str(body.get("run_id") or "").strip()
-    if run_id:
-        stored = _store_get(run_id)
-        fetch_page = stored.get("fetch") or {}
-        articles = stored.get("articles") or {}
-        pages_audit = stored.get("pages") or {}
-        schema = stored.get("schema") or {}
-        citability = stored.get("citability")
-        bots = stored.get("bots")
-        technical = stored.get("technical")
-        robots = stored.get("robots")
-        url = body.get("url") or stored.get("url", "")
+    run_id_raw = str(body.get("run_id") or "").strip()
+    url_raw = (body.get("url") or (body.get("inputs") or {}).get("url") or "").strip()
+    if run_id_raw or url_raw:
+        try:
+            run_id, stored = _resolve_run_id(body)
+        except HTTPException:
+            run_id, stored = "", {}
+        if stored:
+            fetch_page = stored.get("fetch") or {}
+            articles = stored.get("articles") or {}
+            pages_audit = stored.get("pages") or {}
+            schema = stored.get("schema") or {}
+            citability = stored.get("citability")
+            bots = stored.get("bots")
+            technical = stored.get("technical")
+            robots = stored.get("robots")
+            url = url_raw or stored.get("url", "")
+        else:
+            fetch_page = _as_json(body.get("fetch_page")) or {}
+            articles = _as_json(body.get("articles")) or {}
+            pages_audit = _as_json(body.get("pages_audit")) or {}
+            schema = _as_json(body.get("schema")) or {}
+            citability = _as_json(body.get("citability"))
+            bots = _as_json(body.get("bots"))
+            technical = _as_json(body.get("technical"))
+            robots = _as_json(body.get("robots"))
+            url = url_raw
+            if not any((fetch_page, articles, schema, citability, bots, technical)):
+                raise HTTPException(
+                    status_code=422,
+                    detail="缺少有效 run_id 且未提供采集数据；请重新执行 collect-fetch 获取新的 run_id。")
     else:
         fetch_page = _as_json(body.get("fetch_page")) or {}
         articles = _as_json(body.get("articles")) or {}
@@ -548,8 +811,8 @@ async def render(request: Request, _key: str = Depends(require_api_key)):
     plan_md = str(body.get("plan_md") or "")
     offline = bool(body.get("offline", False))
 
-    if run_id:
-        stored = _store_get(run_id)
+    if run_id or body.get("url"):
+        run_id, stored = _resolve_run_id(body)
         url = body.get("url") or stored.get("url", "")
         data = {
             "fetch": stored.get("fetch") or {},

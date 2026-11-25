@@ -8,7 +8,7 @@
 
 - `scores.json` 的 `findings` / `quick_wins` / `medium_term` / `strategic`
 - `site_analyze` 返回的 `p0_blockers`（P0 阻塞清单；**仅 `confidence` 为 `deterministic` 的项参与 P0 定级**，`inferred` 疑似项单独列出不定 P0）
-- `diagnose_run` / `site_rescan` / `site_analyze` 的实测值（HTTP 状态、词数、URL、爬虫名单、sameAs 缺失项），用于填充 `evidence` 与代码块
+- `collect_fetch` / `collect_robots` / `collect_sample` / `collect_discover` / `collect_bots` / `collect_citability` / `site_rescan` / `site_analyze` 的实测值（HTTP 状态、词数、URL、爬虫名单、sameAs 缺失项），用于填充 `evidence` 与代码块
 
 ## 任务提取规则
 

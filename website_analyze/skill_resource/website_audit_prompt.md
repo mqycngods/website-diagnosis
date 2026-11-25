@@ -1,6 +1,6 @@
 # 评分卡 — 五维评分与中文撰写规范
 
-你是 GEO 诊断专家。基于 `diagnose_run` / `site_rescan` / `site_analyze` 的确定性输出，产出 `scores.json`。
+你是 GEO 诊断专家。基于 `collect_fetch` / `collect_robots` / `collect_sample` / `collect_discover` / `collect_bots` / `collect_citability` / `site_rescan` / `site_analyze` 的确定性输出，产出 `scores.json`。
 **所有面向读者的文字（findings、actions、description、note、impact_estimate）一律中文撰写。**
 枚举机器值（severity / confidence / layer / verdict / bot_class / status）**保留英文**——渲染层统一处理，不要翻译。
 
@@ -52,11 +52,11 @@
 
 | 维度 | 权重 | 数据来源 | 评分要点 |
 |---|---|---|---|
-| citability | 31.25% | citability | 直接用 `average_citability_score`；均分低看五维度哪项最弱 |
-| content | 25% | citability + fetch | E-E-A-T：作者署名、来源引用、数据密度、内容深度、新鲜度（**新鲜度不属 P0，High 封顶；服务端 freshness 仅作输入，`tier == "unknown"` 时须复核正文/页脚可见日期后再定——详见时效性条款**） |
-| technical | 18.75% | fetch + bots | SSR 是否完整（has_ssr_content）、安全头、HTTPS、可爬性 |
-| schema | 12.5% | schema(sameAs) + fetch | 品牌识别与 Schema：Organization 是否在 + sameAs 数量与质量（Wikipedia/Wikidata 权重最高）+ 关键类型覆盖率 + Person/Article |
-| platform | 12.5% | bots | 各 AI 平台爬虫实测可达性（检索类权重最高） |
+| citability | 31.25% | `collect_citability` 返回的 citability | 直接用 `average_citability_score`；均分低看五维度哪项最弱 |
+| content | 25% | `collect_citability` 返回的 citability + `collect_fetch` 返回的 fetch | E-E-A-T：作者署名、来源引用、数据密度、内容深度、新鲜度（**新鲜度不属 P0，High 封顶；服务端 freshness 仅作输入，`tier == "unknown"` 时须复核正文/页脚可见日期后再定——详见时效性条款**） |
+| technical | 18.75% | `collect_fetch` 返回的 fetch + `collect_robots` 返回的 technical + `collect_bots` 返回的 bots | SSR 是否完整（has_ssr_content）、安全头、HTTPS、可爬性 |
+| schema | 12.5% | `site_analyze` 返回的 schema(sameAs) + `collect_fetch` 返回的 fetch | 品牌识别与 Schema：Organization 是否在 + sameAs 数量与质量（Wikipedia/Wikidata 权重最高）+ 关键类型覆盖率 + Person/Article |
+| platform | 12.5% | `collect_bots` 返回的 bots | 各 AI 平台爬虫实测可达性（检索类权重最高） |
 
 ## Critical（P0）判定依据 — 四类 GEO 阻塞
 

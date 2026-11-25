@@ -52,6 +52,38 @@ def _safe(fn, label: str = None):
     return _wrapper
 
 
+def _safe_with_retry(fn, label: str = None, max_retries: int = 1, retry_delay: float = 4.0):
+    """_safe 的加强版：检测到响应被截断（truncated_body=True）时串行重试。
+
+    背景（2026-11 修）：Cloudflare 速率限制会截断响应到 <head> 末尾、<body> 完全
+    缺失，fetch_page 拿到 truncated_body=True 的结果——meta/JSON-LD 完整但
+    h1/internal_links/images 全空、word_count 只有 title 词数（典型 5-10）。
+    这种截断是瞬时的，串行重试 1 次（间隔 retry_delay 秒）通常能拿到完整正文。
+
+    只在 truncated_body 时重试：其他错误（404、连接失败、SSL 错误）重试无意义；
+    也避免 challenge_detected=True 时重复触发 WAF。
+    """
+    def _wrapper(*args, **kwargs):
+        import time
+        last_result = None
+        for attempt in range(max_retries + 1):
+            result = _safe(fn, label)(*args, **kwargs)
+            last_result = result
+            if isinstance(result, dict) and result.get("truncated_body"):
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
+                    continue
+                # 重试用尽仍截断——在 errors 里追加提示
+                if isinstance(result.get("errors"), list):
+                    result["errors"].append(
+                        f"截断重试 {max_retries} 次后仍未拿到完整 <body>，"
+                        "建议下次诊断或降低请求频率"
+                    )
+            break
+        return last_result
+    return _wrapper
+
+
 # ── 工具 1：核心抓取 ─────────────────────────────────────────
 
 def fetch_core(url: str) -> dict:
@@ -60,18 +92,18 @@ def fetch_core(url: str) -> dict:
     返回：{fetch, robots, technical}
     单步失败不阻断：对应子 dict 写 {"error": "..."}。
 
-    内部并发：fetch_page 与 fetch_robots 并发跑（互不依赖）；
-    check_technical 依赖 fetch_page 的 security_headers，最后跑。
-    串行 ~45s → 并发 ~30s。
+    串行执行：fetch_page → fetch_robots → check_technical。
+    原实现是 fetch_page 与 fetch_robots 并发跑（ThreadPoolExecutor max_workers=2），
+    同 host 瞬间 2-3 个请求会触发 Cloudflare 速率限制——首页响应被中途截断
+    （707KB → 416KB），word_count 从 1238 掉到 171，并被 SSR 判定逻辑误标
+    「纯客户端渲染」。report.py 串行执行从未触发，故改回串行（2026-11 修）。
     """
     _ensure_cache()
     out = {"url": url}
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        f_fetch = pool.submit(_safe(fetch_mod.fetch_page, "fetch "), url)
-        f_robots = pool.submit(_safe(robots_mod.fetch_robots, "robots 解析"), url)
-        out["fetch"] = f_fetch.result()
-        out["robots"] = f_robots.result()
+    # fetch_page 走截断重试；robots/technical 是 XML/文本响应，不适用截断逻辑
+    out["fetch"] = _safe_with_retry(fetch_mod.fetch_page, "fetch", max_retries=1, retry_delay=4.0)(url)
+    out["robots"] = _safe(robots_mod.fetch_robots, "robots 解析")(url)
 
     page = out["fetch"]
     try:
@@ -123,16 +155,16 @@ def probe_bots(url: str, robots: dict = None) -> dict:
     返回：{bots, citability}
     注意：citability 会复抓一次首页（跨进程无缓存，1 次请求可接受）。
 
-    内部并发：bots 与 citability 互不依赖，并发跑。
-    串行 ~45s → 并发 ~30s（受限于 bots 的 12 个 UA 串行探测）。
+    串行执行：bots 先、citability 后。原实现两者并发（max_workers=2），
+    bots 12 个 UA 重放与 citability 复抓同时打向同 host，会触发 Cloudflare
+    速率限制（BingBot/CCBot status=0、首页响应截断）。改为串行（2026-11 修）。
     """
     _ensure_cache()
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        f_bots = pool.submit(_safe(bots_mod.probe_bots, "爬虫实测"), url,
-                             delay=float(cfg("crawler.polite_delay", 1)))
-        f_cit = pool.submit(_safe(cit_mod.score_citability, "可引用性评分"), url)
-        bots = _apply_robots_cap(f_bots.result(), robots)
-        return {"bots": bots, "citability": f_cit.result()}
+    bots = _safe(bots_mod.probe_bots, "爬虫实测")(url,
+                 delay=float(cfg("crawler.polite_delay", 1)))
+    bots = _apply_robots_cap(bots, robots)
+    citability = _safe(cit_mod.score_citability, "可引用性评分")(url)
+    return {"bots": bots, "citability": citability}
 
 
 # ── 工具 3：页面扫描（抽样 + 功能页 + schema） ───────────────
@@ -213,10 +245,12 @@ def scan_pages(url: str, fetch_page: dict) -> dict:
         articles = _err(f"页面采样失败：{e}")
     out["articles"] = articles
 
-    # 功能页发现
+    # 功能页发现（截断重试，2026-11 修）
     try:
+        fetch_one_with_retry = lambda u: _safe_with_retry(
+            fetch_mod.fetch_page, "fetch", max_retries=1, retry_delay=4.0)(u)
         out["pages"] = discovery.audit_functional_pages(
-            url, internal_links, fetch_one=fetch_mod.fetch_page)
+            url, internal_links, fetch_one=fetch_one_with_retry)
     except Exception as e:
         out["pages"] = _err(f"功能页发现失败：{e}")
 
@@ -307,10 +341,9 @@ def _expand_list_pages(list_pages: list, delay: float) -> list:
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     def _grab(u: str) -> dict:
-        try:
-            return {"url": u, "page": fetch_mod.fetch_page(u)}
-        except Exception as e:
-            return {"url": u, "page": _err(f"列表页抓取失败：{e}")}
+        # 列表页抓取也走截断重试（2026-11 修）
+        return {"url": u, "page": _safe_with_retry(
+            fetch_mod.fetch_page, "fetch", max_retries=1, retry_delay=4.0)(u)}
 
     # 列表页数量少（默认 ≤3），并发抓取不必加锁限速
     results = []
@@ -334,53 +367,28 @@ def _expand_list_pages(list_pages: list, delay: float) -> list:
 
 
 def _fetch_urls_into(articles: dict, article_urls: list, product_urls: list, delay: float):
-    """并发抓取填入 articles dict（与 report.py 同名函数逻辑一致）。
+    """串行抓取填入 articles dict（与 report.py 同名函数逻辑一致）。
 
-    同 host 最多 4 并发，请求间隔 >= delay 秒（礼貌限速）；不同 host 不互斥。
-    串行版本 5 文章 × (30s+1s) ≈ 3min，并发后 ~30s。
+    背景：原实现是 ThreadPoolExecutor(max_workers=4) + 按 host 节流，对
+    Cloudflare 类 WAF 来说 4 req/s 同 host 突发会触发速率限制——连接被
+    中途切断（status_code=0、ChunkedEncodingError），fetch_page 拿到
+    不完整 HTML，word_count 从 1238 掉到 ~170，并被 SSR 判定逻辑误标
+    为「纯客户端渲染」。report.py 走纯串行 + time.sleep 就从未触发，
+    故 pipeline 改回串行（2026-11 修）。
     """
-    import threading
     import time
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    from urllib.parse import urlparse
-
-    # 按 host 分组的锁 + 上次请求时间，保证同 host 间隔 >= delay
-    _host_locks: dict = {}
-    _host_last: dict = {}
-    _locks_guard = threading.Lock()
-
-    def _throttle(host: str):
-        with _locks_guard:
-            lock = _host_locks.setdefault(host, threading.Lock())
-        with lock:
-            last = _host_last.get(host, 0)
-            wait = delay - (time.time() - last)
-            if wait > 0:
-                time.sleep(wait)
-            _host_last[host] = time.time()
 
     def _fetch_one(u: str) -> dict:
-        _throttle(urlparse(u).netloc)
-        try:
-            return fetch_mod.fetch_page(u)
-        except Exception as e:
-            err = _err(f"抓取失败：{e}")
-            err["url"] = u
-            return err
+        # 截断重试（2026-11 修）：Cloudflare 速率限制会截断响应到 <head> 末尾，
+        # 串行重试 1 次间隔 4s 可修复大部分偶发截断。
+        return _safe_with_retry(fetch_mod.fetch_page, "fetch", max_retries=1, retry_delay=4.0)(u)
 
-    # 文章 / 产品分开抓，保持原函数的填充顺序（先文章后产品）
-    def _run_batch(urls: list) -> list:
-        if not urls:
-            return []
-        out = [None] * len(urls)
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            futures = {pool.submit(_fetch_one, u): i for i, u in enumerate(urls)}
-            for fut in as_completed(futures):
-                out[futures[fut]] = fut.result()
-        return out
-
-    articles["pages"].extend(_run_batch(article_urls))
-    articles["product_pages"].extend(_run_batch(product_urls))
+    for u in article_urls:
+        articles["pages"].append(_fetch_one(u))
+        time.sleep(delay)
+    for u in product_urls:
+        articles["product_pages"].append(_fetch_one(u))
+        time.sleep(delay)
 
 
 # ── 工具 4：信号 + 规则引擎 + baseline ──────────────────────
@@ -464,20 +472,25 @@ def _summarize_signals(signals: dict) -> dict:
     return summary
 
 
-# ── 编排：并发跑全量采集（供 /collect 用） ────────────────────
+# ── 编排：串行跑全量采集（供 /collect 用） ────────────────────
 
-def fetch_all(url: str, soft_timeout: float = 25.0) -> dict:
-    """并发编排 fetch_core / probe_bots / scan_pages，加兜底超时。
+def fetch_all(url: str, soft_timeout: float = 110.0) -> dict:
+    """串行编排 fetch_core / probe_bots / scan_pages，加兜底超时。
 
-    平台网关 timeout 通常 30s，这里 25s 兜底——到点还没跑完的子任务
+    平台网关 timeout 120s，这里 110s 兜底——到点还没跑完的子任务
     返回 {"error": "timeout", "partial": true}，让整体能 HTTP 200 返回，
     避免平台侧拿到 axios timeout 而 LLM 什么都拿不到。
 
     依赖关系：
       - fetch_core 先跑（其结果 fetch 是 scan_pages 的输入）
-      - fetch_core 完成后，probe_bots 与 scan_pages 并发
-    理论耗时：fetch_core(~25s) + max(probe_bots, scan_pages)(~25s) ≈ 50s
-    超 25s 时截断返回部分结果。
+      - fetch_core 完成后，probe_bots 与 scan_pages **串行**——原并发实现会
+        触发 Cloudflare 速率限制（同 host 4+ req/s 突发），导致首页响应被截断、
+        word_count 从 1238 掉到 171，SSR 判定逻辑误标「纯客户端渲染」。
+        串行执行单页 1 req/s，Cloudflare 不会介入（2026-11 修）。
+    理论耗时（polite_delay=2s）：fetch_core(~10s) + probe_bots(~35s) +
+    scan_pages(~30s) ≈ 75s，仍在 110s 内。慢站超 110s 时把 scan_pages 标记
+    为 timeout 返回 partial: true，由 agent 后续走 /rescan 补抓 articles/products
+    ——这是已有的兜底机制，不丢数据。
 
     返回结构与原 /collect 完全一致：
       {url, fetch, robots, technical, bots, citability, articles, pages, schema,
@@ -508,38 +521,46 @@ def fetch_all(url: str, soft_timeout: float = 25.0) -> dict:
         out["_meta"]["elapsed"] = round(elapsed, 2)
         return out
 
-    # 阶段 2：probe_bots 与 scan_pages 并发，等待剩余时间
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        f_probe = pool.submit(_safe(probe_bots, "爬虫/可引用性"), url,
-                              core.get("robots", {}))
-        f_scan = pool.submit(_safe(scan_pages, "页面扫描"), url, core.get("fetch", {}))
+    # 阶段 2：probe_bots 与 scan_pages 串行，避免并发突发触发 Cloudflare 限流。
+    # 原实现是两者并发（ThreadPoolExecutor max_workers=2），probe_bots 内部
+    # 12 个 UA 重放 + scan_pages 内部子页抓取同时打向同 host，导致 BingBot/CCBot
+    # 实测 status=0、子页抓失败、首页响应被截断。改为串行（2026-11 修）。
+    probe_result = _safe(probe_bots, "爬虫/可引用性")(url, core.get("robots", {}))
+    if "error" not in probe_result or "bots" in probe_result:
+        _merge(probe_result, {"bots": "bots", "citability": "citability"})
+        out["_meta"]["completed"].append("probe_bots")
+    else:
+        out["_meta"]["partial"] = True
+        out["_meta"]["timed_out"].append("probe_bots")
+        out["bots"] = probe_result
+        out["citability"] = _err("probe_bots 失败，未执行")
 
-        done, not_done = {}, {}
-        for name, fut in (("probe_bots", f_probe), ("scan_pages", f_scan)):
-            try:
-                done[name] = fut.result(timeout=remaining)
-            except Exception as e:
-                # concurrent.futures.TimeoutError 或子任务异常都走这
-                not_done[name] = e
+    # 若 probe_bots 后剩余时间已不足 scan_pages（polite_delay=2s 时经验值 ~35s），
+    # 提前返回 partial，让 agent 走 /rescan 兜底，而不是让请求压 120s 网关超时。
+    elapsed = time.time() - t0
+    if (soft_timeout - elapsed) < 35.0:
+        out["_meta"]["partial"] = True
+        out["_meta"]["timed_out"].append("scan_pages")
+        out["articles"] = {
+            "sampled": [], "sampled_products": [], "pages": [], "product_pages": [],
+            "pending_agent_pick": True,
+            "internal_links": core.get("fetch", {}).get("internal_links", []),
+            "_timeout_fallback": "scan_pages 因 55s 软超时未执行，请调 /rescan 补抓"
+        }
+        out["pages"] = _err("scan_pages 因 55s 软超时未执行")
+        out["schema"] = _err("scan_pages 因 55s 软超时未执行")
+        out["_meta"]["elapsed"] = round(time.time() - t0, 2)
+        return out
 
-        if "probe_bots" in done:
-            _merge(done["probe_bots"], {"bots": "bots", "citability": "citability"})
-            out["_meta"]["completed"].append("probe_bots")
-        else:
-            out["_meta"]["partial"] = True
-            out["_meta"]["timed_out"].append("probe_bots")
-            out["bots"] = _err(f"超时或失败：{not_done['probe_bots']}")
-            out["citability"] = _err("超时，未执行")
-
-        if "scan_pages" in done:
-            _merge(done["scan_pages"],
-                   {"articles": "articles", "pages": "pages", "schema": "schema"})
-            out["_meta"]["completed"].append("scan_pages")
-        else:
-            out["_meta"]["partial"] = True
-            out["_meta"]["timed_out"].append("scan_pages")
-            for k in ("articles", "pages", "schema"):
-                out[k] = _err(f"超时或失败：{not_done['scan_pages']}")
+    scan_result = _safe(scan_pages, "页面扫描")(url, core.get("fetch", {}))
+    if "error" not in scan_result or "articles" in scan_result:
+        _merge(scan_result, {"articles": "articles", "pages": "pages", "schema": "schema"})
+        out["_meta"]["completed"].append("scan_pages")
+    else:
+        out["_meta"]["partial"] = True
+        out["_meta"]["timed_out"].append("scan_pages")
+        for k in ("articles", "pages", "schema"):
+            out[k] = scan_result
 
     out["_meta"]["elapsed"] = round(time.time() - t0, 2)
     return out

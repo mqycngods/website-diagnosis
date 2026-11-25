@@ -21,7 +21,8 @@ def fetch_page(url: str, timeout: int = 30) -> dict:
         "canonical": None, "meta_tags": {}, "h1_tags": [], "heading_structure": [],
         "word_count": 0, "text_content": "", "internal_links": [], "external_links": [],
         "images": [], "structured_data": [], "security_headers": {},
-        "freshness": {}, "has_ssr_content": True, "challenge_detected": False, "errors": [],
+        "freshness": {}, "has_ssr_content": True, "challenge_detected": False,
+        "truncated_body": False, "errors": [],
     }
     if urlparse(url).scheme not in ("http", "https"):
         result["errors"].append(f"不支持的协议：{url}")
@@ -199,6 +200,23 @@ def fetch_page(url: str, timeout: int = 30) -> dict:
                 "src": img.get("src", ""), "alt": img.get("alt", ""),
                 "width": img.get("width"), "height": img.get("height"),
             })
+
+        # 截断检测（2026-11 修）：<head> 完整（meta/JSON-LD 都在）但 <body> 完全缺失
+        # 时，说明 HTTP 响应被对端（典型：Cloudflare 速率限制）截断到 <head> 末尾。
+        # 此时 word_count 会等于 title 词数（典型 5-10），h1/internal_links/images 全空，
+        # 但 has_ssr_content 的判定逻辑不会触发（因 js_roots 为空）——必须显式标记，
+        # 否则下游会误判为「站点正文就这么少」。
+        body_el = soup.find("body")
+        body_missing = (body_el is None) or (not body_el.get_text(strip=True))
+        head_rich = bool(result["meta_tags"]) and bool(result["structured_data"])
+        if body_missing and head_rich and result["status_code"] == 200:
+            result["errors"].append(
+                f"响应疑似被截断：<head> 完整（{len(result['meta_tags'])} 个 meta + "
+                f"{len(result['structured_data'])} 块 JSON-LD），但 <body> 完全缺失。"
+                "可能原因：Cloudflare 速率限制截断响应、对端返回空 body 壳。"
+                "建议串行重试（间隔 3-5s），不要并发。"
+            )
+            result["truncated_body"] = True
 
         if js_roots:
             for i, tl in enumerate(root_text_len):

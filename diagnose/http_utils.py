@@ -27,10 +27,11 @@ from .cache import CachedResponse
 # 都会与它比对失败而被误判 content_stripped。基线必须是「人类读者看到的
 # 正常页面」这个参照物。
 DEFAULT_HEADERS = {
+    # UA 不带 "site-diagnosis/1.0" 标记——Cloudflare Bot Management 看到
+    # 「诊断工具」标识会提高风控等级（2026-11 修）。
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 "
-        "(compatible; site-diagnosis/1.0)"
+        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",

@@ -21,25 +21,25 @@
         "type": "string",
         "field": "result",
         "required": true,
-        "description": "输出结果（GEO 优化执行清单的 Markdown 全文）"
+        "description": "输出结果（GEO 优化执行清单的 Markdown 全文，长度 > 500 字符且含 \"# \" 标题）。**缺失或为空字符串 = 本次 agent 执行失败，平台将重新执行。**"
       },
       {
         "type": "string",
         "field": "html_url",
         "required": true,
-        "description": "在线 HTML 报告链接（取 site_render 返回的 report_url）"
+        "description": "在线 HTML 报告链接（取 site_render 返回的 report_url）。**缺失或为空字符串 = 本次 agent 执行失败。**"
       },
       {
         "type": "string",
         "field": "md_url",
         "required": true,
-        "description": "执行清单 Markdown 在线链接（取 site_render 返回的 md_url）"
+        "description": "执行清单 Markdown 在线链接（取 site_render 返回的 md_url）。**缺失或为空字符串 = 本次 agent 执行失败。**"
       },
       {
         "type": "string",
         "field": "html_result",
         "required": true,
-        "description": "报告 HTML 全文（逐字复制 site_render 返回的 html 字段，通常数万字符；禁止占位/摘要/截断；输出时放最后一个字段）"
+        "description": "报告 HTML 全文（逐字复制 site_render 返回的 html 字段，以 <!doctype html 开头、通常数万字符；禁止占位/摘要/截断；输出时放最后一个字段）。**缺失或为空字符串 = 本次 agent 执行失败，平台将重新执行。**"
       }
     ],
     "temperature": 0.3,
@@ -50,7 +50,12 @@
       "execution_plan"
     ],
     "tool_refs": [
-      "diagnose_run",
+      "collect_fetch",
+      "collect_robots",
+      "collect_sample",
+      "collect_discover",
+      "collect_bots",
+      "collect_citability",
       "site_rescan",
       "site_analyze",
       "site_render"
@@ -74,9 +79,9 @@
   ],
   "tools": [
     {
-      "tool_name": "GEO 官网确定性采集",
-      "tool_name_en": "diagnose_run",
-      "description": "对目标 URL 做确定性采集：首页抓取、robots.txt、12 个 AI 爬虫 UA 重放、可引用性评分、Schema 检测、品牌实体、安全头、功能页发现、信号提取、规则引擎。",
+      "tool_name": "阶段1-首页抓取",
+      "tool_name_en": "collect_fetch",
+      "description": "阶段 1a/6：仅抓首页 HTML（title/meta/正文/JSON-LD/链接）。预计 1-5s。robots 与 technical 由下一步 collect_robots 单独抓。",
       "tool_type": 1,
       "input_params": [
         {
@@ -87,12 +92,152 @@
         }
       ],
       "url_config": {
-        "url": "http://10.224.154.206/collect",
+        "url": "http://10.224.154.206/collect-fetch",
         "body": "{\"url\": \"{{url}}\"}",
         "method": "POST",
         "params": {},
         "headers": {
-          "X-API-Key": "stpTeSywdupakynD7rz5d0JWL9QsUqds",
+          "X-API-Key": "",
+          "Content-Type": "application/json"
+        },
+        "timeout": 120,
+        "auth_type": "none",
+        "body_type": "raw",
+        "auth_config": {}
+      }
+    },
+    {
+      "tool_name": "阶段1b-robots与技术层",
+      "tool_name_en": "collect_robots",
+      "description": "阶段 1b/6：robots.txt + sitemap 递归分析 + 技术层（安全头/HTTPS/llms.txt）。sitemap 大站可能耗时 10-30s，单端点会压 60s 网关超时，所以独立成单独步骤。返回 robots/technical。",
+      "tool_type": 1,
+      "input_params": [
+        {
+          "type": "string",
+          "field": "run_id",
+          "required": true,
+          "description": "必填。取第 1 步 collect_fetch 响应 JSON 里的 run_id 字段值（一个 12 位十六进制字符串，例如 a3f8b2c9d1e4）。必须从 collect_fetch 的实际返回值里原样抄过来，不要自己编、不要写 'auto'、不要写 'run_id'。"
+        }
+      ],
+      "url_config": {
+        "url": "http://10.224.154.206/collect-robots",
+        "body": "{\"run_id\": \"{{run_id}}\"}",
+        "method": "POST",
+        "params": {},
+        "headers": {
+          "X-API-Key": "",
+          "Content-Type": "application/json"
+        },
+        "timeout": 120,
+        "auth_type": "none",
+        "body_type": "raw",
+        "auth_config": {}
+      }
+    },
+    {
+      "tool_name": "阶段2-文章产品采样",
+      "tool_name_en": "collect_sample",
+      "description": "阶段 3/6：基于首页 internal_links 自动采样 5 篇文章 + 3 个产品，串行抓取。返回 articles（含 pending_agent_pick=true，供 LLM 复核挑选）。预计 15-25s。",
+      "tool_type": 1,
+      "input_params": [
+        {
+          "type": "string",
+          "field": "run_id",
+          "required": true,
+          "description": "必填。取第 1 步 collect_fetch 响应 JSON 里的 run_id 字段值（一个 12 位十六进制字符串，例如 a3f8b2c9d1e4）。必须从 collect_fetch 的实际返回值里原样抄过来，不要自己编、不要写 'auto'、不要写 'run_id'。"
+        }
+      ],
+      "url_config": {
+        "url": "http://10.224.154.206/collect-sample",
+        "body": "{\"run_id\": \"{{run_id}}\"}",
+        "method": "POST",
+        "params": {},
+        "headers": {
+          "X-API-Key": "",
+          "Content-Type": "application/json"
+        },
+        "timeout": 120,
+        "auth_type": "none",
+        "body_type": "raw",
+        "auth_config": {}
+      }
+    },
+    {
+      "tool_name": "阶段3-功能页与Schema",
+      "tool_name_en": "collect_discover",
+      "description": "阶段 5/6：发现 Support/FAQ/Contact/About/Warranty 功能页 + 构建 Schema 清单（首页 + 采样子页合并）。返回 pages/schema。预计 3-8s。",
+      "tool_type": 1,
+      "input_params": [
+        {
+          "type": "string",
+          "field": "run_id",
+          "required": true,
+          "description": "必填。取第 1 步 collect_fetch 响应 JSON 里的 run_id 字段值（一个 12 位十六进制字符串，例如 a3f8b2c9d1e4）。必须从 collect_fetch 的实际返回值里原样抄过来，不要自己编、不要写 'auto'、不要写 'run_id'。"
+        }
+      ],
+      "url_config": {
+        "url": "http://10.224.154.206/collect-discover",
+        "body": "{\"run_id\": \"{{run_id}}\"}",
+        "method": "POST",
+        "params": {},
+        "headers": {
+          "X-API-Key": "",
+          "Content-Type": "application/json"
+        },
+        "timeout": 120,
+        "auth_type": "none",
+        "body_type": "raw",
+        "auth_config": {}
+      }
+    },
+    {
+      "tool_name": "阶段4-爬虫实测",
+      "tool_name_en": "collect_bots",
+      "description": "阶段 6/6：12 个 AI 爬虫 UA 重放（GPTBot/ClaudeBot/PerplexityBot/GoogleBot 等），内部串行 delay=1s。返回 bots（verdict/overall_score/每个 UA 实测结果）。预计 15-25s。",
+      "tool_type": 1,
+      "input_params": [
+        {
+          "type": "string",
+          "field": "run_id",
+          "required": true,
+          "description": "必填。取第 1 步 collect_fetch 响应 JSON 里的 run_id 字段值（一个 12 位十六进制字符串，例如 a3f8b2c9d1e4）。必须从 collect_fetch 的实际返回值里原样抄过来，不要自己编、不要写 'auto'、不要写 'run_id'。"
+        }
+      ],
+      "url_config": {
+        "url": "http://10.224.154.206/collect-bots",
+        "body": "{\"run_id\": \"{{run_id}}\"}",
+        "method": "POST",
+        "params": {},
+        "headers": {
+          "X-API-Key": "",
+          "Content-Type": "application/json"
+        },
+        "timeout": 120,
+        "auth_type": "none",
+        "body_type": "raw",
+        "auth_config": {}
+      }
+    },
+    {
+      "tool_name": "阶段5-可引用性评分",
+      "tool_name_en": "collect_citability",
+      "description": "阶段 7/6：首页正文段落可引用性评分（会复抓一次首页）。返回 citability（average_citability_score/逐段评分）。预计 <5s。",
+      "tool_type": 1,
+      "input_params": [
+        {
+          "type": "string",
+          "field": "run_id",
+          "required": true,
+          "description": "必填。取第 1 步 collect_fetch 响应 JSON 里的 run_id 字段值（一个 12 位十六进制字符串，例如 a3f8b2c9d1e4）。必须从 collect_fetch 的实际返回值里原样抄过来，不要自己编、不要写 'auto'、不要写 'run_id'。"
+        }
+      ],
+      "url_config": {
+        "url": "http://10.224.154.206/collect-citability",
+        "body": "{\"run_id\": \"{{run_id}}\"}",
+        "method": "POST",
+        "params": {},
+        "headers": {
+          "X-API-Key": "",
           "Content-Type": "application/json"
         },
         "timeout": 120,
@@ -104,14 +249,14 @@
     {
       "tool_name": "动态站补抓",
       "tool_name_en": "site_rescan",
-      "description": "动态站补抓（仅 articles.pending_agent_pick == true 时调用）。articles 必须是文章详情页 URL，不能传 /blog、/news、/insights 这类栏目列表页——列表页无发布日期，会导致「全站无机器可读日期」误判。",
+      "description": "条件步骤（仅在 collect_sample 返回的 articles.pending_agent_pick=true 且你想改 sampled/sampled_products 时调用；否则跳过）。LLM 挑 URL 后服务端补抓并重建 articles/schema。articles 必须是文章详情页 URL，不能传 /blog、/news、/insights 这类栏目列表页——列表页无发布日期，会导致「全站无机器可读日期」误判。",
       "tool_type": 1,
       "input_params": [
         {
           "type": "string",
           "field": "run_id",
           "required": true,
-          "description": "diagnose_run 返回的 run_id（采集数据已暂存服务端）"
+          "description": "必填。取第 1 步 collect_fetch 响应 JSON 里的 run_id 字段值（一个 12 位十六进制字符串，例如 a3f8b2c9d1e4）。必须从 collect_fetch 的实际返回值里原样抄过来，不要自己编、不要写 'auto'、不要写 'run_id'。"
         },
         {
           "type": "string",
@@ -132,7 +277,7 @@
         "method": "POST",
         "params": {},
         "headers": {
-          "X-API-Key": "stpTeSywdupakynD7rz5d0JWL9QsUqds",
+          "X-API-Key": "",
           "Content-Type": "application/json"
         },
         "timeout": 120,
@@ -144,14 +289,14 @@
     {
       "tool_name": "信号分析",
       "tool_name_en": "site_analyze",
-      "description": "零网络纯计算：signals 提取 + checks 规则引擎 + 品牌实体 + 确定性基线分",
+      "description": "阶段 8/9（收尾步骤，必须在 collect_fetch / collect_sample / collect_discover / collect_bots / collect_citability 全部完成后调用）。零网络纯计算：基于前 5 个 collect_* 阶段已抓的数据，做 signals 提取 + checks 规则引擎 + 品牌实体 + 确定性基线分 + P0 阻塞判定。没有 collect_* 数据时调用会返回 422。",
       "tool_type": 1,
       "input_params": [
         {
           "type": "string",
           "field": "run_id",
           "required": true,
-          "description": "diagnose_run 返回的 run_id（采集数据已暂存服务端）"
+          "description": "必填。取第 1 步 collect_fetch 响应 JSON 里的 run_id 字段值（一个 12 位十六进制字符串，例如 a3f8b2c9d1e4）。必须从 collect_fetch 的实际返回值里原样抄过来，不要自己编、不要写 'auto'、不要写 'run_id'。"
         },
         {
           "type": "string",
@@ -166,7 +311,7 @@
         "method": "POST",
         "params": {},
         "headers": {
-          "X-API-Key": "stpTeSywdupakynD7rz5d0JWL9QsUqds",
+          "X-API-Key": "",
           "Content-Type": "application/json"
         },
         "timeout": 120,
@@ -178,14 +323,14 @@
     {
       "tool_name": "渲染报告",
       "tool_name_en": "site_render",
-      "description": "渲染中文 HTML 诊断报告并落盘服务端 results/，返回 report_url（在线报告）、html（报告 HTML 全文）与 md_url（执行清单 Markdown 在线链接）。**四个入参全部必填**：没有评分时 scores 传 \"{}\"（不能漏传）；plan_md 为执行清单 Markdown 字符串，传了则 md_url 指向清单。",
+      "description": "阶段 9/9（最终步骤，必须在 site_analyze 完成 + 你已写好 scores 与执行清单之后调用）。渲染中文 HTML 诊断报告并落盘服务端 results/，返回 report_url（在线报告）、html（报告 HTML 全文）与 md_url（执行清单 Markdown 在线链接）。**四个入参全部必填**：没有评分时 scores 传 \"{}\"（不能漏传）；plan_md 为执行清单 Markdown 字符串，传了则 md_url 指向清单。",
       "tool_type": 1,
       "input_params": [
         {
           "type": "string",
           "field": "run_id",
           "required": true,
-          "description": "diagnose_run 返回的 run_id（采集与分析数据已暂存服务端）"
+          "description": "必填。取第 1 步 collect_fetch 响应 JSON 里的 run_id 字段值（一个 12 位十六进制字符串，例如 a3f8b2c9d1e4）。必须从 collect_fetch 的实际返回值里原样抄过来，不要自己编、不要写 'auto'、不要写 'run_id'。"
         },
         {
           "type": "string",
@@ -212,7 +357,7 @@
         "method": "POST",
         "params": {},
         "headers": {
-          "X-API-Key": "stpTeSywdupakynD7rz5d0JWL9QsUqds",
+          "X-API-Key": "",
           "Content-Type": "text/plain"
         },
         "timeout": 120,
