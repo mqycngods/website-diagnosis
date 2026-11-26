@@ -33,7 +33,7 @@ ZH_OWNER = {"developer": "开发", "content": "内容", "marketing": "市场"}
 ZH_VERDICT = {"OPEN": "完全开放", "HEALTHY_PUBLISHER": "健康出版方", "PARTIALLY_BLOCKED": "部分受阻",
               "MOSTLY_BLOCKED": "大部分受阻", "BLOCKED": "完全受阻", "INCONCLUSIVE": "无法判定"}
 ZH_BOT_CLASS = {"live-retrieval": "实时检索", "search-index": "搜索索引",
-                "traditional-search": "传统搜索", "training": "训练"}
+                "traditional-search": "传统搜索", "training": "训练", "extension": "扩展生态"}
 ZH_FRESHNESS = {"fresh": "新鲜", "aging": "渐旧", "stale": "陈旧", "very-stale": "严重过时",
                 "future-dated": "日期异常", "unknown": "无日期"}
 

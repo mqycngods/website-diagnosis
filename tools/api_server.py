@@ -17,7 +17,13 @@
 注意：run_id 暂存后端由 STORE_BACKEND 选择。
   - memory（默认）：进程内存，单副本可用，多副本会跨请求丢 run_id。
   - redis：配 REDIS_URL 后启用，支持多副本与滚动更新。
-results/ 落盘在 Render 免费档是临时的，重新部署会丢。
+
+报告归档：默认落盘 results/（Render 免费档临时盘，重新部署会丢）；
+配置 S3_* 环境变量后改为上传到任意 S3 兼容存储（阿里 OSS / 腾讯 COS /
+MinIO / AWS S3 / Cloudflare R2 等），report_url/md_url 返回
+S3_PUBLIC_BASE_URL 拼接的公开 URL（CDN 或外网 endpoint，永久可归档），
+未配公开基址时回退为 presigned URL（默认 7 天）。上传成功后删除本地文件，
+与服务器 IP 解耦。详见 tools/s3_store.py。
 
 启动：
   pip install -r requirements.txt
@@ -50,6 +56,7 @@ from pydantic import BaseModel
 from diagnose import pipeline
 from render.build import build_report_from_dict
 from render.html import render_html_string
+from tools import s3_store
 
 app = FastAPI(
     title="site-diagnosis-zh API",
@@ -378,6 +385,63 @@ def _save_report_files(domain: str, report, html_str: str, plan_md: str = "") ->
     (out_dir / "report-data.json").write_text(
         json.dumps(report.to_dict(), ensure_ascii=False, default=str), encoding="utf-8")
     return {"dir_name": dir_name, "html_name": html_name, "md_name": md_name}
+
+
+def _upload_to_s3(saved: dict, base: str) -> dict:
+    """把 _save_report_files 落盘的 3 个文件上传到 S3，返回 {report_url, md_url}。
+
+    - 未配置 S3：返回本地 /results/... 链接（保持旧行为）。
+    - 配置了 S3：返回 CDN 公开 URL（S3_PUBLIC_BASE_URL）或 presigned URL。
+      上传成功后**删除本地 results/<dir>/**，释放磁盘，链接与服务器解耦。
+      任一文件上传失败抛 S3UploadError，上层把整个 render 标记为失败。
+
+    report-data.json 也一并上传，便于后续审计/复算（即使返回值不暴露它）。
+    """
+    if not s3_store.is_s3_configured():
+        prefix = f"/results/{saved['dir_name']}"
+        return {
+            "report_url": f"{base}{prefix}/{saved['html_name']}",
+            "md_url": f"{base}{prefix}/{saved['md_name']}" if saved["md_name"] else None,
+            "report_path": f"{prefix}/{saved['html_name']}",
+            "md_path": f"{prefix}/{saved['md_name']}" if saved["md_name"] else None,
+            "storage": "local",
+        }
+
+    store = s3_store.get_store()  # 配置错误会抛 S3ConfigError
+    dir_name = saved["dir_name"]
+    files_to_upload = [saved["html_name"], "report-data.json"]
+    if saved["md_name"]:
+        files_to_upload.append(saved["md_name"])
+
+    # 先全部上传成功再删本地——任何一文件失败都保留本地便于排查
+    for file_name in files_to_upload:
+        key = store.build_key(dir_name, file_name)
+        store.put_file(RESULTS_DIR / dir_name / file_name, key)
+
+    html_key = store.build_key(dir_name, saved["html_name"])
+    report_url = store.get_download_url(html_key)
+    md_url = store.get_download_url(store.build_key(dir_name, saved["md_name"])) \
+        if saved["md_name"] else None
+
+    # 上传成功后清掉本地目录：释放磁盘，同时避免线上暴露两套 URL
+    # （旧 /results/<dir>/... 链接会 404 — 这是预期，调用方应使用新 URL）
+    out_dir = RESULTS_DIR / dir_name
+    try:
+        for f in out_dir.iterdir():
+            f.unlink()
+        out_dir.rmdir()
+    except OSError as e:
+        # 删除失败不影响主流程：报告已在 S3 可访问，仅记录
+        print(f"[s3_upload] 警告：删除本地目录 {out_dir} 失败: {e}")
+
+    return {
+        "report_url": report_url,
+        "md_url": md_url,
+        "report_path": f"s3://{store.bucket}/{html_key}",
+        "md_path": f"s3://{store.bucket}/{store.build_key(dir_name, saved['md_name'])}"
+                   if saved["md_name"] else None,
+        "storage": "s3",
+    }
 
 
 # ── 端点 ─────────────────────────────────────────────────────
@@ -884,7 +948,10 @@ async def render(request: Request, _key: str = Depends(require_api_key)):
         html_str = await run_in_threadpool(render_html_string, report, offline)
         saved = _save_report_files(domain, report, html_str, plan_md)
         base = _base_url(request)
-        prefix = f"/results/{saved['dir_name']}"
+        # 上传到 S3（如已配置）→ 返回 CDN/presigned URL；未配置走本地 /results/。
+        # S3 上传失败抛 S3UploadError / S3ConfigError，落入下方 except，
+        # 渲染整体标记为失败，success=false（符合用户选择「直接报错」语义）。
+        links = _upload_to_s3(saved, base)
         return {
             "success": True,
             "html": html_str,
@@ -893,10 +960,11 @@ async def render(request: Request, _key: str = Depends(require_api_key)):
             "url": url,
             "filename": saved["html_name"],
             "result_dir": f"results/{saved['dir_name']}",
-            "report_path": f"{prefix}/{saved['html_name']}",
-            "report_url": f"{base}{prefix}/{saved['html_name']}",
-            "md_path": f"{prefix}/{saved['md_name']}" if saved["md_name"] else None,
-            "md_url": f"{base}{prefix}/{saved['md_name']}" if saved["md_name"] else None,
+            "report_path": links["report_path"],
+            "report_url": links["report_url"],
+            "md_path": links["md_path"],
+            "md_url": links["md_url"],
+            "storage": links["storage"],
             "is_fallback": False,
             "error": None,
             "scores_parse_error": scores_parse_error,

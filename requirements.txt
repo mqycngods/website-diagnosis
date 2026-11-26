@@ -10,3 +10,7 @@ uvicorn>=0.29
 
 # run_id 暂存后端 redis（STORE_BACKEND=redis 时需要；memory 后端不导入）
 redis>=5.0
+
+# tools/s3_store.py：/render 报告上传到 S3/R2/MinIO（配 S3_* env 启用；
+# 不配就不导入 boto3，本地开发零依赖）
+boto3>=1.28

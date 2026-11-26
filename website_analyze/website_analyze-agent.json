@@ -34,12 +34,6 @@
         "field": "md_url",
         "required": true,
         "description": "执行清单 Markdown 在线链接（取 site_render 返回的 md_url）。**缺失或为空字符串 = 本次 agent 执行失败。**"
-      },
-      {
-        "type": "string",
-        "field": "html_result",
-        "required": true,
-        "description": "报告 HTML 全文（逐字复制 site_render 返回的 html 字段，以 <!doctype html 开头、通常数万字符；禁止占位/摘要/截断；输出时放最后一个字段）。**缺失或为空字符串 = 本次 agent 执行失败，平台将重新执行。**"
       }
     ],
     "temperature": 0.3,
@@ -323,7 +317,7 @@
     {
       "tool_name": "渲染报告",
       "tool_name_en": "site_render",
-      "description": "阶段 9/9（最终步骤，必须在 site_analyze 完成 + 你已写好 scores 与执行清单之后调用）。渲染中文 HTML 诊断报告并落盘服务端 results/，返回 report_url（在线报告）、html（报告 HTML 全文）与 md_url（执行清单 Markdown 在线链接）。**四个入参全部必填**：没有评分时 scores 传 \"{}\"（不能漏传）；plan_md 为执行清单 Markdown 字符串，传了则 md_url 指向清单。",
+      "description": "阶段 9/9（最终步骤，必须在 site_analyze 完成 + 你已写好 scores 与执行清单之后调用）。渲染中文 HTML 诊断报告并落盘服务端 results/，返回 report_url（在线报告）与 md_url（执行清单 Markdown 在线链接）；响应中的 html 等报告全文字段一律忽略，不要读取或转发。**四个入参全部必填**：没有评分时 scores 传 \"{}\"（不能漏传）；plan_md 为执行清单 Markdown 字符串，传了则 md_url 指向清单。",
       "tool_type": 1,
       "input_params": [
         {

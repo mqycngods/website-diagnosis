@@ -49,6 +49,38 @@ if [[ -n "$REDIS_URL_VALUE" ]]; then
   SECRET_ARGS+=(--from-literal="REDIS_URL=${REDIS_URL_VALUE}")
 fi
 
+# S3 报告归档（可选）：4 个必需变量都设置才注入，缺一个就跳过（保持本地落盘）。
+# 部分填写会静默失效，这里显式提示，避免以为已启用其实没生效。
+S3_VARS_SET=0
+for v in S3_ENDPOINT S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY; do
+  if [[ -n "${!v:-}" ]]; then
+    S3_VARS_SET=$((S3_VARS_SET+1))
+  fi
+done
+if [[ $S3_VARS_SET -gt 0 && $S3_VARS_SET -lt 4 ]]; then
+  echo "警告：S3 必需变量只配置了 $S3_VARS_SET/4 个，未注入 Secret，报告仍落本地 results/" >&2
+  echo "      需要 S3 归档请补齐: S3_ENDPOINT / S3_BUCKET / S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY" >&2
+fi
+if [[ $S3_VARS_SET -eq 4 ]]; then
+  SECRET_ARGS+=(--from-literal="S3_ENDPOINT=${S3_ENDPOINT}")
+  SECRET_ARGS+=(--from-literal="S3_BUCKET=${S3_BUCKET}")
+  SECRET_ARGS+=(--from-literal="S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID}")
+  SECRET_ARGS+=(--from-literal="S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY}")
+  # 公开 URL 配置不敏感，但放 Secret 保持 env 注入路径统一（避免 Deployment 同时引用 Secret + ConfigMap）
+  [[ -n "${S3_PUBLIC_BASE_URL:-}" ]] && \
+    SECRET_ARGS+=(--from-literal="S3_PUBLIC_BASE_URL=${S3_PUBLIC_BASE_URL}")
+  [[ -n "${S3_PUBLIC_URL_STYLE:-}" ]] && \
+    SECRET_ARGS+=(--from-literal="S3_PUBLIC_URL_STYLE=${S3_PUBLIC_URL_STYLE}")
+  [[ -n "${S3_REGION:-}" ]] && \
+    SECRET_ARGS+=(--from-literal="S3_REGION=${S3_REGION}")
+  [[ -n "${S3_FORCE_PATH_STYLE:-}" ]] && \
+    SECRET_ARGS+=(--from-literal="S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE}")
+  [[ -n "${S3_KEY_PREFIX:-}" ]] && \
+    SECRET_ARGS+=(--from-literal="S3_KEY_PREFIX=${S3_KEY_PREFIX}")
+  [[ -n "${S3_PRESIGNED_TTL_S:-}" ]] && \
+    SECRET_ARGS+=(--from-literal="S3_PRESIGNED_TTL_S=${S3_PRESIGNED_TTL_S}")
+fi
+
 echo "==> 创建/更新 Secret: $SECRET_NAME"
 kubectl "${NS_ARGS[@]}" create secret generic "$SECRET_NAME" \
   "${SECRET_ARGS[@]}" \

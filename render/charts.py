@@ -139,7 +139,7 @@ def compute_charts(report) -> dict:
 
     # 热力矩阵：至少 3 个探针
     if should_render_chart("bot_heatmap", report) and len(probes) >= 3:
-        order = {"live-retrieval": 0, "search-index": 1, "traditional-search": 2, "training": 3}
+        order = {"live-retrieval": 0, "search-index": 1, "traditional-search": 2, "training": 3, "extension": 4}
         probes = sorted(probes, key=lambda p: (order.get(p.get("class"), 9), p.get("bot")))
         state_color = {"allowed": COLORS["green"], "blocked": COLORS["red"],
                        "stripped": COLORS["amber"], "payment": "#5b7ba7"}

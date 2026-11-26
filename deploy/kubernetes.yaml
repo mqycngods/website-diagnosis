@@ -104,6 +104,69 @@ spec:
                   name: plat-arch-site-diagnosis-zh-secret
                   key: REDIS_URL
                   optional: true
+            # ── 报告归档到 S3 ───────────────────────────────
+            # 4 个必需变量由 Secret 注入（apply-secrets.sh 生成）。
+            # optional: true —— 未配置 S3 时保持本地 results/ 落盘，不阻塞启动。
+            - name: S3_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: plat-arch-site-diagnosis-zh-secret
+                  key: S3_ENDPOINT
+                  optional: true
+            - name: S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: plat-arch-site-diagnosis-zh-secret
+                  key: S3_BUCKET
+                  optional: true
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: plat-arch-site-diagnosis-zh-secret
+                  key: S3_ACCESS_KEY_ID
+                  optional: true
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: plat-arch-site-diagnosis-zh-secret
+                  key: S3_SECRET_ACCESS_KEY
+                  optional: true
+            - name: S3_PUBLIC_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: plat-arch-site-diagnosis-zh-secret
+                  key: S3_PUBLIC_BASE_URL
+                  optional: true
+            - name: S3_PUBLIC_URL_STYLE
+              valueFrom:
+                secretKeyRef:
+                  name: plat-arch-site-diagnosis-zh-secret
+                  key: S3_PUBLIC_URL_STYLE
+                  optional: true
+            - name: S3_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: plat-arch-site-diagnosis-zh-secret
+                  key: S3_REGION
+                  optional: true
+            - name: S3_FORCE_PATH_STYLE
+              valueFrom:
+                secretKeyRef:
+                  name: plat-arch-site-diagnosis-zh-secret
+                  key: S3_FORCE_PATH_STYLE
+                  optional: true
+            - name: S3_KEY_PREFIX
+              valueFrom:
+                secretKeyRef:
+                  name: plat-arch-site-diagnosis-zh-secret
+                  key: S3_KEY_PREFIX
+                  optional: true
+            - name: S3_PRESIGNED_TTL_S
+              valueFrom:
+                secretKeyRef:
+                  name: plat-arch-site-diagnosis-zh-secret
+                  key: S3_PRESIGNED_TTL_S
+                  optional: true
           # 抓取 + 解析大页面 + 渲染大 HTML，峰值内存不低；
           # 若被 OOMKilled，内存里的 run_id 会全部丢失，正在进行的诊断直接中断。
           resources:

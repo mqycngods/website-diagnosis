@@ -7,12 +7,46 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
-from .http_utils import get, is_challenge_page
+from .http_utils import get, is_challenge_page, DEFAULT_HEADERS
 
 SECURITY_HEADERS = [
     "Strict-Transport-Security", "Content-Security-Policy", "X-Frame-Options",
     "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy",
 ]
+
+# 基线 UA 回退链（仅人类浏览器 UA，顺序即重试顺序）。
+# 默认 Chrome 在第一位（由 DEFAULT_HEADERS 提供），这里只列回退候选。
+# 覆盖被 WAF 按「特定浏览器特征」误伤的场景（如本站：仅 Chrome/131 被 502，
+# Safari/Firefox 正常）。
+_BASELINE_FALLBACK_UAS = (
+    # Safari（macOS）
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+    # Firefox（Windows）
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) "
+    "Gecko/20100101 Firefox/122.0",
+)
+
+
+def _needs_baseline_ua_fallback(resp) -> bool:
+    """判断基线响应是否疑似被 WAF 按 UA 误伤，需要换浏览器 UA 重试。
+
+    触发条件（任一）：
+      - HTTP 状态码 ≥400（502/403/503 等服务器/WAF 拒绝）
+      - 200 但命中挑战页特征（is_challenge_page）
+      - status_code == 0（curl 静默失败 / 连接被拦截）
+
+    不触发：正常 200 且正文有效。回退只在「拿不到人类正常页面」时发生，
+    避免对正常站点做无谓的重复请求。
+    """
+    sc = getattr(resp, "status_code", None)
+    if not isinstance(sc, int) or sc == 0:
+        return True
+    if sc >= 400:
+        return True
+    if is_challenge_page(getattr(resp, "text", "") or "", sc):
+        return True
+    return False
 
 
 def fetch_page(url: str, timeout: int = 30) -> dict:
@@ -30,6 +64,24 @@ def fetch_page(url: str, timeout: int = 30) -> dict:
 
     try:
         resp = get(url, timeout=timeout)
+        # 基线 UA 回退：默认 Chrome UA 被某些 WAF（如 SiteGround Anti-Bot）按
+        # 「过时浏览器特征」误伤返回 502/403 时，依次换 Safari / Firefox 重试，
+        # 取第一个拿到正常正文的响应作为基线。注意：只回退到「其他人类浏览器
+        # UA」，绝不回退到 AI 爬虫 UA——基线必须是人类读者看到的正常页面，
+        # 否则 bots.py 的相似度比对会被污染（被拦页面当基线 → 被拦探针误判放行）。
+        # 仅当调用方未显式指定 UA 时才回退（fetch_page 即此场景）；bots.py 的
+        # 探针显式传了各自 UA，不进本函数，不受影响。
+        if _needs_baseline_ua_fallback(resp):
+            for ua in _BASELINE_FALLBACK_UAS:
+                if ua == DEFAULT_HEADERS["User-Agent"]:
+                    continue
+                retry = get(url, timeout=timeout, headers={"User-Agent": ua})
+                if not _needs_baseline_ua_fallback(retry):
+                    result["errors"].append(
+                        f"默认 UA 被拦截（HTTP {resp.status_code}），"
+                        f"基线改用回退 UA 抓取成功：{ua[:60]}...")
+                    resp = retry
+                    break
         if is_challenge_page(resp.text, resp.status_code):
             result["challenge_detected"] = True
         result["status_code"] = resp.status_code
